@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
 import { spawn, ChildProcess } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
@@ -49,6 +49,9 @@ function connectMpv(attempt = 0) {
     sendMpv(["observe_property", 3, "duration"]);
     sendMpv(["observe_property", 4, "volume"]);
     sendMpv(["observe_property", 5, "media-title"]);
+    sendMpv(["observe_property", 6, "eof-reached"]);
+    sendMpv(["observe_property", 7, "mute"]);
+    sendMpv(["observe_property", 8, "speed"]);
   });
   client.on("data", chunk => {
     buffer += chunk.toString();
@@ -139,7 +142,11 @@ function startMpv() {
         : "Wayland does not support mpv's native window embedding here. Playback opens in a separate mpv window."
     });
   }
-  mpv = spawn("mpv", args, { stdio: "ignore", windowsHide: true });
+  // Apps launched from Finder/the desktop do not inherit the shell PATH, so add the usual mpv install locations.
+  const extra = process.platform === "darwin" ? ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
+    : process.platform === "linux" ? ["/usr/local/bin", "/usr/bin", "/snap/bin", "/var/lib/flatpak/exports/bin"] : [];
+  const env = { ...process.env, PATH: [process.env.PATH, ...extra].filter(Boolean).join(path.delimiter) };
+  mpv = spawn("mpv", args, { stdio: "ignore", windowsHide: true, env });
   mpv.on("error", () => {
     sendStatus({ event: "error", message: "mpv was not found. Install mpv and make sure it is available on PATH." });
   });
@@ -147,12 +154,20 @@ function startMpv() {
   connectMpv();
 }
 
+function overlayFor() {
+  const dark = nativeTheme.shouldUseDarkColors;
+  return { color: dark ? "#1c1c1e" : "#f5f5f7", symbolColor: dark ? "#f5f5f7" : "#1d1d1f", height: 44 };
+}
+
 function createWindow() {
   windowRef = new BrowserWindow({
     width: 1440, height: 900, minWidth: 900, minHeight: 620,
     title: "OnePlay",
-    backgroundColor: "#101114",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    backgroundColor: process.platform === "darwin" ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#101114" : "#f5f5f7",
+    // macOS: traffic lights inset into a translucent sidebar. Windows: custom title bar with native caption buttons.
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : process.platform === "win32" ? "hidden" : "default",
+    ...(process.platform === "darwin" ? { vibrancy: "sidebar" as const, visualEffectState: "active" as const, trafficLightPosition: { x: 20, y: 20 } } : {}),
+    ...(process.platform === "win32" ? { titleBarOverlay: overlayFor() } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -163,6 +178,9 @@ function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) windowRef.loadURL(process.env.VITE_DEV_SERVER_URL);
   else windowRef.loadFile(path.join(__dirname, "../dist/index.html"));
   windowRef.on("resize", updateVideoHostBounds);
+  windowRef.on("enter-full-screen", () => { windowRef?.webContents.send("player:fullscreen", true); });
+  windowRef.on("leave-full-screen", () => { windowRef?.webContents.send("player:fullscreen", false); });
+  nativeTheme.on("updated", () => { if (process.platform === "win32") windowRef?.setTitleBarOverlay(overlayFor()); });
   windowRef.on("move", updateVideoHostBounds);
   windowRef.on("closed", () => {
     videoHost?.close();
@@ -198,6 +216,10 @@ app.whenReady().then(() => {
   ipcMain.handle("player:toggle-pause", () => { sendMpv(["cycle", "pause"]); return true; });
   ipcMain.handle("player:seek", (_event, seconds: number) => { sendMpv(["seek", seconds, "absolute"]); return true; });
   ipcMain.handle("player:set-volume", (_event, volume: number) => { sendMpv(["set_property", "volume", Math.max(0, Math.min(100, volume))]); return true; });
+  ipcMain.handle("player:set-mute", (_e, muted: boolean) => { sendMpv(["set_property", "mute", Boolean(muted)]); return true; });
+  ipcMain.handle("player:set-speed", (_e, speed: number) => { sendMpv(["set_property", "speed", Math.max(0.25, Math.min(4, Number(speed) || 1))]); return true; });
+  ipcMain.handle("player:set-loop", (_e, loop: boolean) => { sendMpv(["set_property", "loop-file", loop ? "inf" : "no"]); return true; });
+  ipcMain.handle("window:toggle-fullscreen", () => { windowRef?.setFullScreen(!windowRef.isFullScreen()); return true; });
   ipcMain.handle("player:stop", () => { sendMpv(["stop"]); return true; });
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

@@ -1,46 +1,70 @@
-name: Build OnePlay
+name: Build and release OnePlay
 on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            artifact: windows
-          - os: ubuntu-latest
-            artifact: linux
-          - os: macos-latest
-            artifact: macos
+          - { os: windows-latest, name: windows }
+          - { os: ubuntu-latest,  name: linux }
+          - { os: macos-latest,   name: macos }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
-      - name: Build
-        shell: bash
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "Tag detected – building and publishing to GitHub Releases"
-            npm run typecheck
-            npx vite build
-            npx electron-builder --publish always
-          else
-            echo "Regular build (no release)"
-            npm run build
-          fi
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned builds; see README for first-launch notes
+      - name: List installers
+        shell: bash
+        run: ls -lh release
       - uses: actions/upload-artifact@v4
         with:
-          name: oneplay-${{ matrix.artifact }}
-          path: release/*
+          name: oneplay-${{ matrix.name }}
+          retention-days: 30
           if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - run: ls -lh installers
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*
+          generate_release_notes: true
+          body: |
+            ## Downloads
+            - **Windows:** `OnePlay-*-win-x64.exe` (installer) or the portable `.exe`
+            - **macOS (Apple Silicon and Intel):** `OnePlay-*-mac-universal.dmg`
+            - **Ubuntu / Linux:** `OnePlay-*-linux-x86_64.AppImage` or the `.deb` (`sudo apt install ./OnePlay-*.deb` also installs mpv)
+
+            OnePlay plays media with **mpv**. Install it first on Windows and macOS (see the README). These builds are unsigned; see the README for the first-launch steps.

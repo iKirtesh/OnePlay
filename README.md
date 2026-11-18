@@ -25,6 +25,22 @@ OnePlay is a free, cross-platform desktop media-player project for Windows, Linu
 
 FFmpeg is used by mpv for decoding. This development build expects an mpv executable installed on the host; it does not yet bundle mpv or its codec libraries.
 
+## Download
+
+Get the latest installers from the [Releases page](https://github.com/iKirtesh/OnePlay/releases/latest):
+
+| System | File |
+| --- | --- |
+| Windows 10/11 | `OnePlay-<version>-win-x64.exe` (installer) or the portable `.exe` |
+| macOS (Apple Silicon + Intel) | `OnePlay-<version>-mac-universal.dmg` |
+| Ubuntu / Debian | `OnePlay-<version>-linux-amd64.deb` (`sudo apt install ./OnePlay-*.deb`, also installs mpv) or the `.AppImage` |
+
+**Install mpv first** (OnePlay does not bundle it yet): Windows `winget install mpv` or `scoop install mpv`; macOS `brew install mpv`; Ubuntu `sudo apt install mpv`.
+
+**First launch (builds are unsigned):** on macOS right-click the app and choose Open (or run `xattr -cr /Applications/OnePlay.app`); on Windows choose *More info > Run anyway* in SmartScreen; AppImage needs `chmod +x`.
+
+Shortcuts: Space/K play-pause, arrows seek and volume (Shift = 30 s), M mute, F fullscreen, N/P next/previous, L repeat. You can also drag files onto the window.
+
 ## Run locally
 
 ```bash
@@ -52,6 +68,7 @@ The mpv IPC endpoint is local-only. Do not expose it over a network: the protoco
 
 ## Roadmap
 
+0. Cut a release: `git tag v0.2.0 && git push origin v0.2.0` builds Windows, macOS and Linux installers and attaches them to a GitHub Release.
 1. Validate and harden native video embedding on Windows and Linux/X11.
 2. Implement in-process libmpv rendering for macOS and evaluate a Wayland-native path.
 3. Bundle or reliably locate mpv per platform and provide first-run diagnostics.

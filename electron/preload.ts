@@ -1,6 +1,17 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("oneplay", {
+  platform: process.platform,
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
+  setMute: (muted: boolean) => ipcRenderer.invoke("player:set-mute", muted),
+  setSpeed: (speed: number) => ipcRenderer.invoke("player:set-speed", speed),
+  setLoop: (loop: boolean) => ipcRenderer.invoke("player:set-loop", loop),
+  toggleFullscreen: () => ipcRenderer.invoke("window:toggle-fullscreen"),
+  onFullscreen: (callback: (on: boolean) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, on: boolean) => callback(on);
+    ipcRenderer.on("player:fullscreen", listener);
+    return () => ipcRenderer.removeListener("player:fullscreen", listener);
+  },
   openFile: () => ipcRenderer.invoke("dialog:open-file"),
   play: (filePath: string) => ipcRenderer.invoke("player:play", filePath),
   togglePause: () => ipcRenderer.invoke("player:toggle-pause"),

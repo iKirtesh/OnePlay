@@ -1,13 +1,13 @@
 {
   "name": "oneplay",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A free cross-platform desktop media player powered by mpv and FFmpeg.",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck && vite build && electron-builder",
-    "build:dir": "npm run typecheck && vite build && electron-builder --dir",
+    "build": "npm run typecheck && vite build && electron-builder --publish never",
+    "build:dir": "npm run typecheck && vite build && electron-builder --dir --publish never",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },
@@ -42,25 +42,63 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
-      "category": "public.app-category.video"
+      "category": "public.app-category.video",
+      "icon": "build/icon.png",
+      "hardenedRuntime": false,
+      "identity": null
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
-      ]
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "category": "AudioVideo"
+      "category": "AudioVideo",
+      "icon": "build/icon.png",
+      "maintainer": "Kirtesh Admute <kirteshadmute@gmail.com>",
+      "synopsis": "Free cross-platform media player"
     },
-    "publish": null
+    "publish": null,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "copyright": "Copyright \u00a9 Kirtesh Admute",
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "deb": {
+      "depends": [
+        "mpv"
+      ]
+    }
   },
   "author": "Kirtesh Admute <kirteshadmute@gmail.com>"
 }
