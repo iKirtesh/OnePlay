@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "OnePlay",
+    "slug": "oneplay-mobile",
+    "version": "0.1.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "me.oneplay.mobile",
+      "infoPlist": { "UIBackgroundModes": ["audio"], "ITSAppUsesNonExemptEncryption": false }
+    },
+    "android": {
+      "package": "me.oneplay.mobile",
+      "adaptiveIcon": { "foregroundImage": "./assets/icon.png", "backgroundColor": "#0A84FF" }
+    },
+    "plugins": [
+      ["expo-video", { "supportsBackgroundPlayback": true, "supportsPictureInPicture": true }],
+      "expo-document-picker"
+    ]
+  }
+}

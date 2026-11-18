@@ -41,6 +41,10 @@ Get the latest installers from the [Releases page](https://github.com/iKirtesh/O
 
 Shortcuts: Space/K play-pause, arrows seek and volume (Shift = 30 s), M mute, F fullscreen, N/P next/previous, L repeat. You can also drag files onto the window.
 
+## Mobile (Android + iPhone)
+
+A separate phone app lives in [`mobile/`](mobile) (Expo + React Native, native video player). Builds appear on the Releases page as `mobile-<n>`: an Android `.apk` and an **unsigned** iOS `.ipa` that must be sideloaded with AltStore or Sideloadly (free Apple ID apps expire after 7 days). Untested on physical devices.
+
 ## Run locally
 
 ```bash
