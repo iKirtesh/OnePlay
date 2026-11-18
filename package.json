@@ -6,9 +6,9 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && electron-builder",
-    "build:dir": "tsc -b && vite build && electron-builder --dir",
-    "typecheck": "tsc -b --pretty",
+    "build": "npm run typecheck && vite build && electron-builder",
+    "build:dir": "npm run typecheck && vite build && electron-builder --dir",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -31,10 +31,34 @@
     "appId": "me.oneplay.desktop",
     "productName": "OnePlay",
     "asar": true,
-    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
-    "directories": { "buildResources": "build", "output": "release" },
-    "mac": { "target": ["dmg", "zip"], "category": "public.app-category.video" },
-    "win": { "target": ["nsis", "portable"] },
-    "linux": { "target": ["AppImage", "deb"], "category": "AudioVideo" }
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.video"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "AudioVideo"
+    }
   }
 }
