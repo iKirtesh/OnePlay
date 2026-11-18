@@ -1,13 +1,15 @@
 name: Build OnePlay
 on:
-  workflow_dispatch:
   push:
+    branches: [main]
     tags: ["v*"]
+  workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -29,3 +31,4 @@ jobs:
         with:
           name: oneplay-${{ matrix.artifact }}
           path: release/*
+          if-no-files-found: error
