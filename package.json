@@ -92,12 +92,16 @@
     "copyright": "Copyright \u00a9 Kirtesh Admute",
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-${version}-win-x64-setup.${ext}"
     },
     "deb": {
       "depends": [
         "mpv"
       ]
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-win-x64-portable.${ext}"
     }
   },
   "author": "Kirtesh Admute <kirteshadmute@gmail.com>"

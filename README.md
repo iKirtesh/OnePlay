@@ -31,7 +31,7 @@ Get the latest installers from the [Releases page](https://github.com/iKirtesh/O
 
 | System | File |
 | --- | --- |
-| Windows 10/11 | `OnePlay-<version>-win-x64.exe` (installer) or the portable `.exe` |
+| Windows 10/11 | `OnePlay-<version>-win-x64-setup.exe` (installer) or the portable `.exe` |
 | macOS (Apple Silicon + Intel) | `OnePlay-<version>-mac-universal.dmg` |
 | Ubuntu / Debian | `OnePlay-<version>-linux-amd64.deb` (`sudo apt install ./OnePlay-*.deb`, also installs mpv) or the `.AppImage` |
 
