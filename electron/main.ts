@@ -10,6 +10,7 @@ let mpv: ChildProcess | null = null;
 let socket: net.Socket | null = null;
 let buffer = "";
 let ipcEndpoint = "";
+const pendingCommands: unknown[][] = [];
 
 function endpoint() {
   if (process.platform === "win32") return `\\\\.\\pipe\\oneplay-mpv-${process.pid}`;
@@ -17,15 +18,19 @@ function endpoint() {
 }
 
 function sendMpv(command: unknown[]) {
-  if (!socket || socket.destroyed) return;
-  socket.write(JSON.stringify({ command }) + "\\n");
+  if (!socket || socket.destroyed) {
+    pendingCommands.push(command);
+    return;
+  }
+  socket.write(JSON.stringify({ command }) + "\n");
 }
 
 function connectMpv(attempt = 0) {
-  if (attempt > 40) return;
+  if (attempt > 40 || !mpv) return;
   const client = net.createConnection(ipcEndpoint);
   client.on("connect", () => {
     socket = client;
+    for (const command of pendingCommands.splice(0)) sendMpv(command);
     sendMpv(["observe_property", 1, "pause"]);
     sendMpv(["observe_property", 2, "time-pos"]);
     sendMpv(["observe_property", 3, "duration"]);
@@ -34,7 +39,7 @@ function connectMpv(attempt = 0) {
   });
   client.on("data", chunk => {
     buffer += chunk.toString();
-    const lines = buffer.split("\\n");
+    const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
     for (const line of lines) {
       try {
@@ -46,6 +51,7 @@ function connectMpv(attempt = 0) {
     }
   });
   client.on("error", () => setTimeout(() => connectMpv(attempt + 1), 150));
+  client.on("close", () => { if (socket === client) socket = null; });
 }
 
 function startMpv() {
@@ -81,9 +87,8 @@ function createWindow() {
   });
   if (process.env.VITE_DEV_SERVER_URL) {
     windowRef.loadURL(process.env.VITE_DEV_SERVER_URL);
-    windowRef.webContents.openDevTools({ mode: "detach" });
   } else {
-    windowRef.loadFile(path.join(__dirname, "../../dist/index.html"));
+    windowRef.loadFile(path.join(__dirname, "../dist/index.html"));
   }
   windowRef.on("closed", () => { windowRef = null; });
 }
