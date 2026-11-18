@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLines, FolderOpen, ListMusic, Maximize2, MoreHorizontal, Pause, Play, Repeat2, SkipBack, SkipForward, Volume2, Waves } from "lucide-react";
 
 type Media = { path: string; name: string };
@@ -10,6 +10,33 @@ export default function App() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(80);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const stageRef = useRef<HTMLDivElement>(null);
+
+  const updateVideoBounds = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    window.oneplay.setVideoBounds({
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height
+    });
+  }, []);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const observer = new ResizeObserver(updateVideoBounds);
+    observer.observe(stage);
+    window.addEventListener("resize", updateVideoBounds);
+    updateVideoBounds();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateVideoBounds);
+    };
+  }, [updateVideoBounds]);
 
   useEffect(() => window.oneplay.onStatus((status: any) => {
     if (status.event === "property-change") {
@@ -20,6 +47,7 @@ export default function App() {
       if (name === "volume" && typeof data === "number") setVolume(data);
     }
     if (status.event === "error") setError(status.message);
+    if (status.event === "info") setInfo(status.message);
   }), []);
 
   const openFiles = async () => {
@@ -29,6 +57,8 @@ export default function App() {
     setQueue(items);
     setCurrent(items[0]);
     setError("");
+    setInfo("");
+    await updateVideoBounds();
     await window.oneplay.play(items[0].path);
   };
   const toggle = async () => {
@@ -56,9 +86,10 @@ export default function App() {
         <div className="eyebrow">ONEPLAY PLAYER</div>
         <h1>{current ? current.name : "A little space for your media."}</h1>
         <p className="subheading">{current ? "Now playing on OnePlay" : "Your music and movies, beautifully together."}</p>
-        <div className="video-stage">
+        <div className={`video-stage ${current ? "has-media" : ""}`} ref={stageRef}>
           {!current ? <div className="empty-state"><div className="empty-icon"><AudioLines size={34}/></div><h2>Ready when you are.</h2><p>Open a video or audio file to get started.</p><button className="primary-button" onClick={openFiles}><FolderOpen size={16}/> Open media</button></div> :
-            <div className="playing-state"><div className="playing-orb"><AudioLines size={48}/></div><span>PLAYING IN MPV</span><small>{current.path}</small></div>}
+            <div className="playing-state"><div className="playing-orb"><AudioLines size={48}/></div><span>VIDEO SURFACE</span><small>{current.name}</small></div>}
+          {info && <div className="stage-notice">{info}</div>}
           <button className="stage-expand" title="Fullscreen (coming soon)"><Maximize2 size={17}/></button>
         </div>
         {error && <div className="error-banner">{error}</div>}
