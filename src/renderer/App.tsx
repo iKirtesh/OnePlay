@@ -87,8 +87,7 @@ export default function App() {
         <h1>{current ? current.name : "A little space for your media."}</h1>
         <p className="subheading">{current ? "Now playing on OnePlay" : "Your music and movies, beautifully together."}</p>
         <div className={`video-stage ${current ? "has-media" : ""}`} ref={stageRef}>
-          {!current ? <div className="empty-state"><div className="empty-icon"><AudioLines size={34}/></div><h2>Ready when you are.</h2><p>Open a video or audio file to get started.</p><button className="primary-button" onClick={openFiles}><FolderOpen size={16}/> Open media</button></div> :
-            <div className="playing-state"><div className="playing-orb"><AudioLines size={48}/></div><span>VIDEO SURFACE</span><small>{current.name}</small></div>}
+          {!current && <div className="empty-state"><div className="empty-icon"><AudioLines size={34}/></div><h2>Ready when you are.</h2><p>Open a video or audio file to get started.</p><button className="primary-button" onClick={openFiles}><FolderOpen size={16}/> Open media</button></div>}
           {info && <div className="stage-notice">{info}</div>}
           <button className="stage-expand" title="Fullscreen (coming soon)"><Maximize2 size={17}/></button>
         </div>
@@ -96,8 +95,8 @@ export default function App() {
         <section className="transport">
           <div className="timeline"><span>{format(position)}</span><input aria-label="Seek" type="range" min="0" max={Math.max(duration,1)} value={Math.min(position,duration || 0)} onChange={e => window.oneplay.seek(Number(e.target.value))}/><span>{format(duration)}</span></div>
           <div className="controls">
-            <div className="control-side"><button className="control-button" onClick={() => window.oneplay.seek(Math.max(0,position-10))}><SkipBack size={19}/></button><button className="control-button"><Repeat2 size={18}/></button></div>
-            <div className="main-controls"><button className="control-button" onClick={() => window.oneplay.seek(Math.max(0,position-5))}><SkipBack size={20}/></button><button className="play-button" onClick={toggle}>{paused ? <Play size={21} fill="currentColor"/> : <Pause size={21} fill="currentColor"/>}</button><button className="control-button" onClick={() => window.oneplay.seek(Math.min(duration,position+5))}><SkipForward size={20}/></button></div>
+            <div className="control-side"><button className="control-button" onClick={() => { if (queue.length > 1 && current) { const i = queue.findIndex(m => m.path === current.path); const prev = queue[(i - 1 + queue.length) % queue.length]; setCurrent(prev); window.oneplay.play(prev.path); } else window.oneplay.seek(Math.max(0, position - 10)); }}><SkipBack size={19}/></button><button className="control-button"><Repeat2 size={18}/></button></div>
+            <div className="main-controls"><button className="control-button" onClick={() => window.oneplay.seek(Math.max(0,position-5))}><SkipBack size={20}/></button><button className="play-button" onClick={toggle}>{paused ? <Play size={21} fill="currentColor"/> : <Pause size={21} fill="currentColor"/>}</button><button className="control-button" onClick={() => { if (queue.length > 1 && current) { const i = queue.findIndex(m => m.path === current.path); const next = queue[(i + 1) % queue.length]; setCurrent(next); window.oneplay.play(next.path); } else window.oneplay.seek(Math.min(duration || 0, position + 5)); }}><SkipForward size={20}/></button></div>
             <div className="control-side volume"><Volume2 size={18}/><input aria-label="Volume" type="range" min="0" max="100" value={volume} onChange={e => { const v=Number(e.target.value); setVolume(v); window.oneplay.setVolume(v); }}/></div>
           </div>
         </section>

@@ -11,7 +11,7 @@ let mpv: ChildProcess | null = null;
 let socket: net.Socket | null = null;
 let buffer = "";
 let ipcEndpoint = "";
-let videoBounds = { x: 0, y: 0, width: 640, height: 360 };
+let relativeBounds = { x: 0, y: 0, width: 640, height: 360 };
 const pendingCommands: unknown[][] = [];
 
 function canEmbedNativeWindow() {
@@ -65,24 +65,46 @@ function connectMpv(attempt = 0) {
   client.on("close", () => { if (socket === client) socket = null; });
 }
 
+function getScreenBounds() {
+  if (!windowRef) return relativeBounds;
+  const content = windowRef.getContentBounds();
+  return {
+    x: Math.round(content.x + relativeBounds.x),
+    y: Math.round(content.y + relativeBounds.y),
+    width: Math.max(160, Math.round(relativeBounds.width)),
+    height: Math.max(90, Math.round(relativeBounds.height))
+  };
+}
+
+function updateVideoHostBounds() {
+  if (videoHost && !videoHost.isDestroyed()) {
+    videoHost.setBounds(getScreenBounds());
+  }
+}
+
 function createVideoHost() {
   if (!windowRef || !canEmbedNativeWindow()) return null;
   if (videoHost && !videoHost.isDestroyed()) return videoHost;
+  const bounds = getScreenBounds();
   videoHost = new BrowserWindow({
     parent: windowRef,
-    x: videoBounds.x,
-    y: videoBounds.y,
-    width: Math.max(160, videoBounds.width),
-    height: Math.max(90, videoBounds.height),
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
     frame: false,
     show: false,
     focusable: false,
     skipTaskbar: true,
     backgroundColor: "#000000",
+    transparent: false,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   videoHost.loadURL("data:text/html,<html><body style='margin:0;background:#000'></body></html>");
-  videoHost.once("ready-to-show", () => videoHost?.showInactive());
+  videoHost.once("ready-to-show", () => {
+    videoHost?.showInactive();
+    updateVideoHostBounds();
+  });
   videoHost.on("closed", () => { videoHost = null; });
   return videoHost;
 }
@@ -103,7 +125,8 @@ function startMpv() {
   const args = [
     "--idle=yes", "--force-window=yes", "--keep-open=yes",
     `--input-ipc-server=${ipcEndpoint}`, "--terminal=no",
-    "--msg-level=all=warn", "--keepaspect-window=no"
+    "--msg-level=all=warn", "--keepaspect-window=no",
+    "--no-border", "--ontop=no"
   ];
   if (canEmbedNativeWindow()) {
     const host = createVideoHost();
@@ -139,9 +162,8 @@ function createWindow() {
   });
   if (process.env.VITE_DEV_SERVER_URL) windowRef.loadURL(process.env.VITE_DEV_SERVER_URL);
   else windowRef.loadFile(path.join(__dirname, "../dist/index.html"));
-  windowRef.on("resize", () => {
-    if (videoHost && !videoHost.isDestroyed()) videoHost.setBounds(videoBounds);
-  });
+  windowRef.on("resize", updateVideoHostBounds);
+  windowRef.on("move", updateVideoHostBounds);
   windowRef.on("closed", () => {
     videoHost?.close();
     videoHost = null;
@@ -159,12 +181,13 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("player:set-video-bounds", (_event, bounds: { x: number; y: number; width: number; height: number }) => {
     if (!bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return false;
-    videoBounds = {
-      x: Math.round(bounds.x), y: Math.round(bounds.y),
-      width: Math.max(160, Math.round(bounds.width)),
-      height: Math.max(90, Math.round(bounds.height))
+    relativeBounds = {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height
     };
-    if (videoHost && !videoHost.isDestroyed()) videoHost.setBounds(videoBounds);
+    updateVideoHostBounds();
     return true;
   });
   ipcMain.handle("player:play", (_event, filePath: string) => {
