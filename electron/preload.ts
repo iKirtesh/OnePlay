@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("oneplay", {
   togglePause: () => ipcRenderer.invoke("player:toggle-pause"),
   seek: (seconds: number) => ipcRenderer.invoke("player:seek", seconds),
   setVolume: (volume: number) => ipcRenderer.invoke("player:set-volume", volume),
+  setVideoBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
+    ipcRenderer.invoke("player:set-video-bounds", bounds),
   stop: () => ipcRenderer.invoke("player:stop"),
   onStatus: (callback: (status: any) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: any) => callback(status);
