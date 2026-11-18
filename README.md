@@ -68,7 +68,7 @@ The mpv IPC endpoint is local-only. Do not expose it over a network: the protoco
 
 ## Roadmap
 
-0. Cut a release: `git tag v0.2.0 && git push origin v0.2.0` builds Windows, macOS and Linux installers and attaches them to a GitHub Release.
+0. Cut a release: bump `version` in package.json and push to main; CI builds Windows, macOS and Linux installers and publishes them to a GitHub Release `v<version>`.
 1. Validate and harden native video embedding on Windows and Linux/X11.
 2. Implement in-process libmpv rendering for macOS and evaluate a Wayland-native path.
 3. Bundle or reliably locate mpv per platform and provide first-run diagnostics.
