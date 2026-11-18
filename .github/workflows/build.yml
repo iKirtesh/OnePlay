@@ -5,7 +5,7 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     strategy:
@@ -25,7 +25,20 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npm run build
+      - name: Build
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "Tag detected – building and publishing to GitHub Releases"
+            npm run typecheck
+            npx vite build
+            npx electron-builder --publish always
+          else
+            echo "Regular build (no release)"
+            npm run build
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: oneplay-${{ matrix.artifact }}
