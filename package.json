@@ -59,6 +59,8 @@
         "deb"
       ],
       "category": "AudioVideo"
-    }
-  }
+    },
+    "publish": null
+  },
+  "author": "Kirtesh Admute <kirteshadmute@gmail.com>"
 }
