@@ -6,15 +6,28 @@ import os from "node:os";
 import fs from "node:fs";
 
 let windowRef: BrowserWindow | null = null;
+let videoHost: BrowserWindow | null = null;
 let mpv: ChildProcess | null = null;
 let socket: net.Socket | null = null;
 let buffer = "";
 let ipcEndpoint = "";
+let videoBounds = { x: 0, y: 0, width: 640, height: 360 };
 const pendingCommands: unknown[][] = [];
+
+function canEmbedNativeWindow() {
+  if (process.platform === "win32") return true;
+  if (process.platform === "linux") return process.env.XDG_SESSION_TYPE !== "wayland";
+  // mpv --wid with a Cocoa NSView is supported by libmpv, not the mpv CLI process.
+  return false;
+}
 
 function endpoint() {
   if (process.platform === "win32") return `\\\\.\\pipe\\oneplay-mpv-${process.pid}`;
   return path.join(os.tmpdir(), `oneplay-mpv-${process.pid}.sock`);
+}
+
+function sendStatus(status: Record<string, unknown>) {
+  windowRef?.webContents.send("player:property", status);
 }
 
 function sendMpv(command: unknown[]) {
@@ -26,7 +39,7 @@ function sendMpv(command: unknown[]) {
 }
 
 function connectMpv(attempt = 0) {
-  if (attempt > 40 || !mpv) return;
+  if (attempt > 60 || !mpv) return;
   const client = net.createConnection(ipcEndpoint);
   client.on("connect", () => {
     socket = client;
@@ -44,14 +57,44 @@ function connectMpv(attempt = 0) {
     for (const line of lines) {
       try {
         const message = JSON.parse(line);
-        if (message.event === "property-change" && windowRef) {
-          windowRef.webContents.send("player:property", message);
-        }
+        if (message.event === "property-change") sendStatus(message);
       } catch { /* Ignore non-JSON mpv output. */ }
     }
   });
   client.on("error", () => setTimeout(() => connectMpv(attempt + 1), 150));
   client.on("close", () => { if (socket === client) socket = null; });
+}
+
+function createVideoHost() {
+  if (!windowRef || !canEmbedNativeWindow()) return null;
+  if (videoHost && !videoHost.isDestroyed()) return videoHost;
+  videoHost = new BrowserWindow({
+    parent: windowRef,
+    x: videoBounds.x,
+    y: videoBounds.y,
+    width: Math.max(160, videoBounds.width),
+    height: Math.max(90, videoBounds.height),
+    frame: false,
+    show: false,
+    focusable: false,
+    skipTaskbar: true,
+    backgroundColor: "#000000",
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  videoHost.loadURL("data:text/html,<html><body style='margin:0;background:#000'></body></html>");
+  videoHost.once("ready-to-show", () => videoHost?.showInactive());
+  videoHost.on("closed", () => { videoHost = null; });
+  return videoHost;
+}
+
+function nativeWindowId(host: BrowserWindow) {
+  const handle = host.getNativeWindowHandle();
+  if (process.platform === "win32") {
+    // mpv's Win32 wid parser expects the HWND cast to a 32-bit unsigned integer.
+    return (handle.readBigUInt64LE(0) & 0xffffffffn).toString();
+  }
+  // X11 Window is an unsigned long; mpv accepts its decimal representation.
+  return handle.readBigUInt64LE(0).toString();
 }
 
 function startMpv() {
@@ -60,13 +103,22 @@ function startMpv() {
   const args = [
     "--idle=yes", "--force-window=yes", "--keep-open=yes",
     `--input-ipc-server=${ipcEndpoint}`, "--terminal=no",
-    "--msg-level=all=warn"
+    "--msg-level=all=warn", "--keepaspect-window=no"
   ];
+  if (canEmbedNativeWindow()) {
+    const host = createVideoHost();
+    if (host) args.push(`--wid=${nativeWindowId(host)}`);
+  } else {
+    sendStatus({
+      event: "info",
+      message: process.platform === "darwin"
+        ? "macOS currently uses a separate mpv video window. In-process libmpv rendering is required for true embedding."
+        : "Wayland does not support mpv's native window embedding here. Playback opens in a separate mpv window."
+    });
+  }
   mpv = spawn("mpv", args, { stdio: "ignore", windowsHide: true });
   mpv.on("error", () => {
-    windowRef?.webContents.send("player:property", {
-      event: "error", message: "mpv was not found. Install mpv and make sure it is available on PATH."
-    });
+    sendStatus({ event: "error", message: "mpv was not found. Install mpv and make sure it is available on PATH." });
   });
   mpv.on("exit", () => { mpv = null; socket?.destroy(); socket = null; });
   connectMpv();
@@ -85,12 +137,16 @@ function createWindow() {
       sandbox: true
     }
   });
-  if (process.env.VITE_DEV_SERVER_URL) {
-    windowRef.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    windowRef.loadFile(path.join(__dirname, "../dist/index.html"));
-  }
-  windowRef.on("closed", () => { windowRef = null; });
+  if (process.env.VITE_DEV_SERVER_URL) windowRef.loadURL(process.env.VITE_DEV_SERVER_URL);
+  else windowRef.loadFile(path.join(__dirname, "../dist/index.html"));
+  windowRef.on("resize", () => {
+    if (videoHost && !videoHost.isDestroyed()) videoHost.setBounds(videoBounds);
+  });
+  windowRef.on("closed", () => {
+    videoHost?.close();
+    videoHost = null;
+    windowRef = null;
+  });
 }
 
 app.whenReady().then(() => {
@@ -100,6 +156,16 @@ app.whenReady().then(() => {
       filters: [{ name: "Media", extensions: ["mp4","mkv","avi","mov","webm","m4v","mp3","flac","wav","aac","ogg"] }]
     });
     return result.canceled ? [] : result.filePaths;
+  });
+  ipcMain.handle("player:set-video-bounds", (_event, bounds: { x: number; y: number; width: number; height: number }) => {
+    if (!bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return false;
+    videoBounds = {
+      x: Math.round(bounds.x), y: Math.round(bounds.y),
+      width: Math.max(160, Math.round(bounds.width)),
+      height: Math.max(90, Math.round(bounds.height))
+    };
+    if (videoHost && !videoHost.isDestroyed()) videoHost.setBounds(videoBounds);
+    return true;
   });
   ipcMain.handle("player:play", (_event, filePath: string) => {
     startMpv();
@@ -117,6 +183,7 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   socket?.destroy();
   mpv?.kill();
+  videoHost?.destroy();
   if (process.platform !== "win32" && ipcEndpoint) {
     try { if (fs.existsSync(ipcEndpoint)) fs.unlinkSync(ipcEndpoint); } catch { /* best effort */ }
   }
