@@ -77,6 +77,15 @@ jobs:
         with:
           cache-cleanup: on-success
       - run: npm install --legacy-peer-deps --no-audit --no-fund
+      - name: Fix VLC Gradle config for AGP 9
+        run: |
+          node -e "
+          const fs=require('fs');
+          const file='node_modules/react-native-vlc-media-player/android/build.gradle';
+          const source=fs.readFileSync(file,'utf8');
+          const updated=source.replace('proguard-android.txt','proguard-android-optimize.txt');
+          if (source === updated) throw new Error('Expected obsolete ProGuard file reference was not found');
+          fs.writeFileSync(file,updated)"
       - run: npx tsc --noEmit
       - name: Bump versionCode
         run: |
