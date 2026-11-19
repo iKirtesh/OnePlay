@@ -5,7 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from './theme';
 import type { Item } from './scan';
 import Slider from '@react-native-community/slider';
-import { Conn, PcFolder, PcStatus, clearConn, fetchLibrary, fileUrl, loadConn, pair, pcControl, pcStatus } from './remote';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Conn, PcFolder, PcStatus, clearConn, fetchLibrary, fileUrl, loadConn, pair, pairFromQr, parsePairQr, pcControl, pcStatus } from './remote';
 import { clock } from './theme';
 import type { Play } from './Library';
 
@@ -22,6 +23,9 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
   const [err, setErr] = useState('');
   const [view, setView] = useState<'browse' | 'remote'>('browse');
   const [note, setNote] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [perm, askPerm] = useCameraPermissions();
+  const scanned = React.useRef(false);
 
   const load = useCallback(async (refresh = false) => {
     setBusy(true); setErr('');
@@ -37,11 +41,38 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
     try { const c = await pair(host, code); setConn(c); setCode(''); await load(true); }
     catch (e) { setErr((e as Error).message); setBusy(false); }
   };
+  const startScan = async () => {
+    setErr('');
+    const p = perm?.granted ? perm : await askPerm();
+    if (!p.granted) { setErr('Camera permission is needed to scan the QR code. You can still type the address below.'); return; }
+    scanned.current = false; setScanning(true);
+  };
+  const onScan = async (data: string) => {
+    if (scanned.current) return;
+    const q = parsePairQr(data);
+    if (!q) return;
+    scanned.current = true; setScanning(false); setBusy(true); setErr('');
+    try { const c = await pairFromQr(q.hosts, q.code); setConn(c); await load(true); }
+    catch (e) { setErr((e as Error).message); setBusy(false); }
+  };
   const play = (f: PcFolder, index: number) => {
     const queue: Item[] = f.items.map((i) => ({ id: i.id, uri: fileUrl(i.id), name: i.name, kind: /^(mp3|flac|wav|aac|ogg|opus|m4a)$/.test(i.ext) ? 'audio' : 'video', duration: 0, folderId: f.id, added: 0 }));
     onPlay({ queue, index });
   };
   const input = { color: t.text, backgroundColor: t.fill, borderRadius: 10, padding: 12, fontSize: 16 } as const;
+
+  if (scanning) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <CameraView style={{ flex: 1 }} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={(r) => void onScan(r.data)} />
+        <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: 250, height: 250, borderRadius: 24, borderWidth: 3, borderColor: '#fff' }} />
+          <Text style={{ color: '#fff', marginTop: 20, fontSize: 16, fontWeight: '600', textShadowColor: '#000', textShadowRadius: 6 }}>Point at the QR code on your computer</Text>
+        </View>
+        <Pressable onPress={() => setScanning(false)} style={{ position: 'absolute', top: 50, left: 20, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 22, padding: 10 }}><Feather name="x" size={24} color="#fff" /></Pressable>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }}>
@@ -64,7 +95,11 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
       {conn === undefined ? <ActivityIndicator style={{ marginTop: 60 }} color={t.accent} /> : null}
       {conn === null ? (
         <View style={{ padding: 20, gap: 12 }}>
-          <Text style={{ color: t.text2, lineHeight: 20 }}>On your computer open OnePlay, click the Wi-Fi button, turn sharing on and add your video folders. Then enter the address and pairing code shown there. Both devices must be on the same Wi-Fi.</Text>
+          <Text style={{ color: t.text2, lineHeight: 20 }}>On your computer open OnePlay, click the Wi-Fi button, turn sharing on and add your video folders. A QR code appears there. Both devices must be on the same Wi-Fi.</Text>
+          <Pressable disabled={busy} onPress={startScan} style={{ flexDirection: 'row', gap: 10, backgroundColor: t.accent, borderRadius: 14, padding: 16, alignItems: 'center', justifyContent: 'center' }}>
+            {busy ? <ActivityIndicator color="#fff" /> : <Feather name="camera" size={22} color="#fff" />}<Text style={{ color: '#fff', fontWeight: '700', fontSize: 17 }}>{busy ? 'Connecting…' : 'Scan QR code'}</Text>
+          </Pressable>
+          <Text style={{ color: t.text2, textAlign: 'center', marginTop: 6 }}>Or enter it by hand</Text>
           <TextInput value={host} onChangeText={setHost} placeholder="Address, e.g. 192.168.1.20:8765" placeholderTextColor={t.text2} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={input} />
           <TextInput value={code} onChangeText={setCode} placeholder="6-digit pairing code" placeholderTextColor={t.text2} keyboardType="number-pad" maxLength={6} style={input} />
           <Pressable disabled={busy || !host || code.length < 6} onPress={connect} style={{ backgroundColor: t.accent, opacity: busy || !host || code.length < 6 ? 0.5 : 1, borderRadius: 12, padding: 14, alignItems: 'center' }}>

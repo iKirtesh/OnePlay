@@ -30,6 +30,7 @@
       }
     },
     "plugins": [
+      ["expo-camera", { "cameraPermission": "OnePlay uses the camera to scan the pairing QR code shown on your computer.", "recordAudioAndroid": false }],
       [
         "expo-video",
         {

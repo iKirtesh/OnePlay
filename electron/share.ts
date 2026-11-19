@@ -39,7 +39,8 @@ const isPrivate = (ip: string) => {
   const a = ip.replace(/^::ffff:/, "");
   return a === "::1" || a.startsWith("127.") || a.startsWith("10.") || a.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(a) || a.startsWith("169.254.") || /^f[cd]/i.test(a) || /^fe80/i.test(a);
 };
-export const addresses = () => Object.values(os.networkInterfaces()).flat().filter((i): i is os.NetworkInterfaceInfo => !!i && i.family === "IPv4" && !i.internal).map((i) => i.address);
+const lanRank = (a: string) => (a.startsWith("192.168.") ? 0 : a.startsWith("10.") ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(a) ? 2 : 3);
+export const addresses = () => Object.values(os.networkInterfaces()).flat().filter((i): i is os.NetworkInterfaceInfo => !!i && i.family === "IPv4" && !i.internal).map((i) => i.address).sort((a, b) => lanRank(a) - lanRank(b));
 
 async function walk(dir: string, depth: number, out: Entry[]) {
   if (depth > 6 || out.length > 20000) return;

@@ -1,6 +1,6 @@
 {
   "name": "oneplay",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "A free cross-platform desktop media player powered by mpv and FFmpeg.",
   "main": "dist-electron/main.js",
@@ -13,11 +13,13 @@
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
@@ -77,7 +79,10 @@
       ],
       "icon": "build/icon.png",
       "extraResources": [
-        { "from": "vendor/mpv", "to": "mpv" }
+        {
+          "from": "vendor/mpv",
+          "to": "mpv"
+        }
       ]
     },
     "linux": {
@@ -92,7 +97,7 @@
     },
     "publish": null,
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
-    "copyright": "Copyright \u00a9 Kirtesh Admute",
+    "copyright": "Copyright © Kirtesh Admute",
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

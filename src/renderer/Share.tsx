@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 import { FolderPlus, Wifi, X } from "lucide-react";
 
 export function SharePanel({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<ShareState | null>(null);
   useEffect(() => { void window.oneplay.shareState().then(setS); return window.oneplay.onShareState(setS); }, []);
   const addr = s?.addresses[0];
+  const [qr, setQr] = useState("");
+  // The QR holds every address of this computer plus the pairing code, so the phone can connect by scanning.
+  const payload = s?.enabled && s.addresses.length ? `oneplay://pair?h=${s.addresses.map((a) => `${a}:${s.port}`).join(",")}&c=${s.code}` : "";
+  useEffect(() => { if (!payload) { setQr(""); return; } void QRCode.toDataURL(payload, { margin: 1, width: 240, errorCorrectionLevel: "M" }).then(setQr); }, [payload]);
   return (
     <div className="share-overlay" onClick={onClose}>
       <div className="share-panel" role="dialog" aria-label="Wi-Fi sharing" onClick={(e) => e.stopPropagation()}>
@@ -17,6 +22,9 @@ export function SharePanel({ onClose }: { onClose: () => void }) {
           <input type="checkbox" checked={!!s?.enabled} onChange={(e) => window.oneplay.shareToggle(e.target.checked).then(setS)} />
           <span>{s?.enabled ? "Sharing is on" : "Sharing is off"}</span>
         </label>
+        {s?.enabled && qr && (
+          <div className="share-qr"><img src={qr} alt="Pairing QR code" width={200} height={200} /><p className="share-note">On your phone open OnePlay, tap the monitor icon, then <b>Scan QR code</b>.</p></div>
+        )}
         {s?.enabled && (
           <div className="share-card">
             <div><small>Address for your phone</small><b>{addr ? `${addr}:${s.port}` : "No network found"}</b></div>

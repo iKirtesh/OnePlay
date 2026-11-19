@@ -41,9 +41,9 @@ async function call<T>(host: string, path: string, opts: { method?: string; body
   } finally { clearTimeout(timer); }
 }
 
-export async function pair(hostInput: string, code: string): Promise<Conn> {
+export async function pair(hostInput: string, code: string, timeout?: number): Promise<Conn> {
   const host = normalizeHost(hostInput);
-  const r = await call<{ token: string; name: string }>(host, '/api/pair', { method: 'POST', body: { code: code.trim() } });
+  const r = await call<{ token: string; name: string }>(host, '/api/pair', { method: 'POST', body: { code: code.trim() }, timeout });
   conn = { host, token: r.token, name: r.name };
   await AsyncStorage.setItem(KEY, JSON.stringify(conn)).catch(() => {});
   return conn;
@@ -83,4 +83,27 @@ export async function pullPcLists(): Promise<Lists | null> {
 export async function pushPcLists(l: Partial<Lists>) {
   if (!conn) return;
   try { await call(conn.host, '/api/lists', { method: 'PUT', token: conn.token, body: l, timeout: 4000 }); } catch { /* computer offline; synced next time */ }
+}
+
+/** Reads the pairing QR shown by OnePlay on the computer: oneplay://pair?h=ip:port,ip:port&c=123456 */
+export function parsePairQr(data: string): { hosts: string[]; code: string } | null {
+  const m = /^oneplay:\/\/pair\?(.+)$/i.exec(data.trim());
+  if (!m) return null;
+  const q = new URLSearchParams(m[1]);
+  const hosts = (q.get('h') ?? '').split(',').map((h) => h.trim()).filter(Boolean);
+  const code = q.get('c') ?? '';
+  return hosts.length && /^\d{6}$/.test(code) ? { hosts, code } : null;
+}
+/** Tries every address from the QR at the same time and keeps the first that answers. */
+export async function pairFromQr(hosts: string[], code: string): Promise<Conn> {
+  // Hermes may not have Promise.any, so wait for the first success by hand.
+  return new Promise<Conn>((resolve, reject) => {
+    const errors: Error[] = []; let left = hosts.length;
+    for (const h of hosts) {
+      pair(h, code, 4000).then(resolve, (e: Error) => {
+        errors.push(e);
+        if (--left === 0) reject(errors.find((x) => x.message === 'Wrong code' || /attempts/.test(x.message)) ?? new Error('Could not reach the computer. Make sure both are on the same Wi-Fi.'));
+      });
+    }
+  });
 }
