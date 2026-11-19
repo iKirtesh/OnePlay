@@ -45,7 +45,27 @@
           ]
         }
       ],
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      [
+        "react-native-vlc-media-player",
+        {
+          "ios": {
+            "includeVLCKit": false
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "packagingOptions": {
+              "pickFirst": [
+                "**/libc++_shared.so"
+              ]
+            }
+          }
+        }
+      ]
     ]
   }
 }
