@@ -1,5 +1,7 @@
 export {};
 declare global {
+  type Playlist = { id: string; name: string; items: string[]; at: number; deleted?: boolean };
+  type Lists = { fav: Record<string, { on: boolean; at: number }>; playlists: Record<string, Playlist> };
   type ShareState = { enabled: boolean; port: number; addresses: string[]; code: string; folders: string[]; devices: number };
   interface Window {
     oneplay: {
@@ -24,6 +26,19 @@ declare global {
       setChapter: (n: number) => Promise<boolean>;
       screenshot: () => Promise<string>;
       toggleOnTop: () => Promise<boolean>;
+      grabFrame: (file: string, t: number, w: number) => Promise<string | null>;
+      subsGet: () => Promise<{ apiKey: string; username: string; hasPassword: boolean }>;
+      subsSave: (s: { apiKey: string; username: string; password: string }) => Promise<boolean>;
+      subsSearch: (q: string, lang: string) => Promise<{ fileId: number; release: string; language: string; downloads: number }[]>;
+      subsDownload: (id: number, video: string, lang: string) => Promise<{ path: string; remaining?: number }>;
+      checkUpdate: () => Promise<{ version: string; url: string } | null>;
+      openUpdate: (url: string) => Promise<boolean>;
+      shareStatus: (st: unknown) => Promise<boolean>;
+      listsGet: () => Promise<Lists>;
+      listsPut: (l: Partial<Lists>) => Promise<Lists>;
+      resolveNames: (keys: string[]) => Promise<Record<string, string>>;
+      onLists: (cb: (l: Lists) => void) => () => void;
+      onRemote: (cb: (c: any) => void) => () => void;
       shareState: () => Promise<ShareState>;
       shareToggle: (on: boolean) => Promise<ShareState>;
       shareAddFolder: () => Promise<ShareState>;

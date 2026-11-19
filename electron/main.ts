@@ -5,6 +5,8 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import * as share from "./share";
+import * as extras from "./extras";
+import { mpvCommand, mpvEnv } from "./mpvpath";
 
 let windowRef: BrowserWindow | null = null;
 let videoHost: BrowserWindow | null = null;
@@ -56,6 +58,7 @@ function connectMpv(attempt = 0) {
     sendMpv(["observe_property", 9, "chapter-list"]);
     sendMpv(["observe_property", 10, "track-list"]);
     sendMpv(["observe_property", 11, "chapter"]);
+    sendMpv(["observe_property", 12, "metadata"]);
   });
   client.on("data", chunk => {
     buffer += chunk.toString();
@@ -147,15 +150,7 @@ function startMpv() {
     });
   }
   // Apps launched from Finder/the desktop do not inherit the shell PATH, so add the usual mpv install locations.
-  const home = os.homedir();
-  const extra = process.platform === "darwin" ? ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
-    : process.platform === "linux" ? ["/usr/local/bin", "/usr/bin", "/snap/bin", "/var/lib/flatpak/exports/bin"]
-    : [path.join(process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"), "Microsoft", "WinGet", "Links"), path.join(home, "scoop", "shims"), path.join(process.env.ProgramFiles ?? "C:\\Program Files", "mpv"), "C:\\ProgramData\\chocolatey\\bin"];
-  // Use the mpv shipped inside the installer when there is one, otherwise whatever is installed on the system.
-  const bundled = path.join(process.resourcesPath, "mpv", process.platform === "win32" ? "mpv.exe" : "mpv");
-  const mpvCommand = app.isPackaged && fs.existsSync(bundled) ? bundled : "mpv";
-  const env = { ...process.env, PATH: [process.env.PATH, ...extra].filter(Boolean).join(path.delimiter) };
-  mpv = spawn(mpvCommand, args, { stdio: "ignore", windowsHide: true, env });
+  mpv = spawn(mpvCommand(), args, { stdio: "ignore", windowsHide: true, env: mpvEnv() });
   mpv.on("error", () => {
     sendStatus({ event: "error", message: process.platform === "win32" ? "mpv was not found. Run \"winget install mpv\" in a terminal, then restart OnePlay." : process.platform === "darwin" ? "mpv was not found. Run \"brew install mpv\", then restart OnePlay." : "mpv was not found. Run \"sudo apt install mpv\", then restart OnePlay." });
   });
@@ -219,6 +214,11 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("player:play", (_event, filePath: string) => {
     startMpv();
+    // Music shows its album art in the app window, so the native video surface is hidden for audio files.
+    if (videoHost && !videoHost.isDestroyed()) {
+      if (/\.(mp3|flac|wav|aac|ogg|opus|m4a)$/i.test(filePath)) videoHost.hide();
+      else { videoHost.showInactive(); updateVideoHostBounds(); }
+    }
     sendMpv(["loadfile", filePath, "replace"]);
     return true;
   });
@@ -255,6 +255,23 @@ app.whenReady().then(() => {
     return on;
   });
   share.initShare(() => windowRef?.webContents.send("share:state", share.shareState()));
+  share.onRemoteCommand((cmd) => windowRef?.webContents.send("remote:cmd", cmd));
+  share.onListsChanged(() => windowRef?.webContents.send("share:lists", share.getLists()));
+  ipcMain.handle("share:status", (_e, st: Record<string, unknown>) => { share.setStatus(st); return true; });
+  ipcMain.handle("share:lists-get", () => share.getLists());
+  ipcMain.handle("share:lists-put", (_e, l) => { share.mergeLists(l); return share.getLists(); });
+  ipcMain.handle("share:resolve", (_e, keys: string[]) => share.resolveNames(Array.isArray(keys) ? keys.map(String) : []));
+  ipcMain.handle("thumb:frame", (_e, file: string, t: number, w: number) => extras.grabFrame(String(file), Number(t) || 0, Math.max(80, Math.min(640, Number(w) || 320))));
+  ipcMain.handle("subs:get", () => { const s = extras.getSubSettings(); return { apiKey: s.apiKey, username: s.username, hasPassword: !!s.password }; });
+  ipcMain.handle("subs:save", (_e, s) => { const cur = extras.getSubSettings(); extras.saveSubSettings({ apiKey: s.apiKey, username: s.username, password: s.password ? s.password : cur.password }); return true; });
+  ipcMain.handle("subs:search", (_e, q: string, lang: string) => extras.searchSubs(String(q), String(lang)));
+  ipcMain.handle("subs:download", async (_e, fileId: number, video: string, lang: string) => {
+    const r = await extras.downloadSub(Number(fileId), String(video), String(lang));
+    sendMpv(["sub-add", r.path, "select"]);
+    return r;
+  });
+  ipcMain.handle("update:check", () => extras.checkUpdate());
+  ipcMain.handle("update:open", (_e, url: string) => { extras.openRelease(String(url)); return true; });
   ipcMain.handle("share:state", () => share.shareState());
   ipcMain.handle("share:toggle", async (_e, on: boolean) => { if (on) await share.startShare(); else share.stopShare(); return share.shareState(); });
   ipcMain.handle("share:add-folder", async () => {

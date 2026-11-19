@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SharePanel } from "./Share";
-import { Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { AddToPlaylist, FavButton, ListsPane } from "./Lists";
+import { SubsPanel } from "./SubsPanel";
+import { AUDIO_EXT, Media, remember, shuffled } from "./lib";
+import { Heart, ListPlus, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 
-type Media = { path: string; name: string };
-type Tab = "queue" | "recent";
+type Tab = "queue" | "recent" | "favs" | "lists";
 const MEDIA_EXT = /\.(mp4|mkv|avi|mov|webm|m4v|mp3|flac|wav|aac|ogg|opus|m4a|wmv|ts)$/i;
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const RECENT_KEY = "oneplay.recent";
@@ -42,6 +44,18 @@ export default function App() {
   const [chapter, setChapter] = useState(-1);
   const [onTop, setOnTop] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [lists, setLists] = useState<Lists>({ fav: {}, playlists: {} });
+  const [subsOpen, setSubsOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [shuffle, setShuffle] = useState(false);
+  const origQueue = useRef<Media[] | null>(null);
+  const [art, setArt] = useState<string | null>(null);
+  const [meta, setMeta] = useState<{ title?: string; artist?: string; album?: string }>({});
+  const [hover, setHover] = useState<{ x: number; t: number; img: string | null } | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const [update, setUpdate] = useState<{ version: string; url: string } | null>(null);
+  const [dismissed, setDismissed] = useState(false);
   const pendingResume = useRef(0);
   const lastSave = useRef(0);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -49,8 +63,8 @@ export default function App() {
   const platform = window.oneplay.platform;
 
   // Latest values for the long-lived listeners below.
-  const live = useRef({ queue, index, loop, position, duration });
-  live.current = { queue, index, loop, position, duration };
+  const live = useRef({ queue, index, loop, position, duration, paused, volume, muted, speed });
+  live.current = { queue, index, loop, position, duration, paused, volume, muted, speed };
 
   const updateVideoBounds = useCallback(() => {
     const stage = stageRef.current;
@@ -73,6 +87,8 @@ export default function App() {
     const item = list[i];
     if (!item) return;
     if (live.current.index >= 0) { const c = live.current.queue[live.current.index]; if (c) writeResume(c.path, live.current.position, live.current.duration); }
+    remember(list);
+    setMeta({}); setArt(null);
     pendingResume.current = readResume()[item.path] ?? 0;
     try { const r = await window.oneplay.getShareResume(shareKey(item.path)); if (r) pendingResume.current = r.pos; } catch { /* sharing unavailable */ }
     setChapters([]); setChapter(-1);
@@ -103,6 +119,10 @@ export default function App() {
         const { queue: q, index: i, duration: d } = live.current;
         if (i >= 0 && q[i] && Date.now() - lastSave.current > 5000) { lastSave.current = Date.now(); writeResume(q[i]!.path, data, d); }
       }
+      if (name === "metadata" && data && typeof data === "object") {
+        const m = Object.fromEntries(Object.entries(data as Record<string, unknown>).map(([k, v]) => [k.toLowerCase(), String(v)]));
+        setMeta({ title: m.title, artist: m.artist ?? m.album_artist, album: m.album });
+      }
       if (name === "chapter-list" && Array.isArray(data)) setChapters(data);
       if (name === "chapter" && typeof data === "number") setChapter(data);
       if (name === "duration" && typeof data === "number") { setDuration(data); if (pendingResume.current > 5) { void window.oneplay.seek(pendingResume.current); setInfo(`Resumed at ${clock(pendingResume.current)}`); pendingResume.current = 0; } }
@@ -120,6 +140,69 @@ export default function App() {
   }), [playAt]);
 
   useEffect(() => window.oneplay.onFullscreen(setFullscreen), []);
+
+  // Favorites and playlists live in the main process so the phone can sync them too.
+  useEffect(() => { void window.oneplay.listsGet().then(setLists); return window.oneplay.onLists(setLists); }, []);
+
+  // Update notice (checks GitHub releases at start and every few hours).
+  useEffect(() => {
+    const check = () => void window.oneplay.checkUpdate().then((u) => { if (u) setUpdate(u); });
+    check(); const id = setInterval(check, 6 * 3600 * 1000); return () => clearInterval(id);
+  }, []);
+
+  // Album art for music.
+  useEffect(() => {
+    if (!current || !AUDIO_EXT.test(current.path)) { setArt(null); return; }
+    let alive = true;
+    void window.oneplay.grabFrame(current.path, 0, 600).then((a) => { if (alive) setArt(a); });
+    return () => { alive = false; };
+  }, [current?.path]);
+
+  // Phone remote: commands come in from the Wi-Fi server, and what is playing goes back out.
+  const remote = useRef<(c: any) => void>(() => {});
+  remote.current = (c) => {
+    const l = live.current; const has = l.index >= 0;
+    if (c.cmd === "playFile" && typeof c.path === "string") { setShuffle(false); void playAt([toMedia(c.path)], 0); return; }
+    if (!has) return;
+    if (c.cmd === "toggle") void window.oneplay.togglePause();
+    else if (c.cmd === "play" && l.paused) void window.oneplay.togglePause();
+    else if (c.cmd === "pause" && !l.paused) void window.oneplay.togglePause();
+    else if (c.cmd === "seekBy") void skip(Number(c.by) || 0);
+    else if (c.cmd === "seekTo") void window.oneplay.seek(Number(c.to) || 0);
+    else if (c.cmd === "volume") changeVolume(Number(c.value) || 0);
+    else if (c.cmd === "mute") void window.oneplay.setMute(!l.muted);
+    else if (c.cmd === "next") next(1);
+    else if (c.cmd === "prev") next(-1);
+    else if (c.cmd === "speed") { const v = Number(c.value) || 1; setSpeed(v); void window.oneplay.setSpeed(v); }
+  };
+  useEffect(() => window.oneplay.onRemote((c) => remote.current(c)), []);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const l = live.current; const cur = l.queue[l.index];
+      void window.oneplay.shareStatus({ title: cur?.name ?? "", paused: l.paused, position: l.position, duration: l.duration, volume: l.volume, muted: l.muted, speed: l.speed, index: l.index, count: l.queue.length });
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const toggleShuffle = () => {
+    const { queue: q, index: i } = live.current;
+    if (!shuffle) {
+      origQueue.current = q; const cur = q[i];
+      setQueue(cur ? [cur, ...shuffled(q.filter((_, x) => x !== i))] : shuffled(q)); setIndex(cur ? 0 : -1);
+    } else if (origQueue.current) {
+      const o = origQueue.current; const cur = q[i];
+      setQueue(o); setIndex(cur ? Math.max(0, o.findIndex((m) => m.path === cur.path)) : -1);
+    }
+    setShuffle(!shuffle);
+  };
+  const onTimelineMove = (e: React.MouseEvent<HTMLInputElement>) => {
+    if (!current || AUDIO_EXT.test(current.path) || duration <= 0) return;
+    const r = e.currentTarget.getBoundingClientRect(); const box = timelineRef.current?.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); const t = f * duration; const x = e.clientX - (box?.left ?? 0);
+    setHover((h) => ({ x, t, img: h?.img ?? null }));
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => { void window.oneplay.grabFrame(current.path, t, 240).then((img) => setHover((h) => (h ? { ...h, img } : h))); }, 140);
+  };
 
   const openFiles = async () => {
     const files = await window.oneplay.openFile();
@@ -182,11 +265,15 @@ export default function App() {
         <div className="drag-strip" />
         <div className="brand"><div className="brand-mark"><Play size={14} fill="currentColor" /></div><span>OnePlay</span></div>
         <button className="primary-button" onClick={openFiles}><FolderOpen size={15} /> Open media…</button>
-        <div className="segmented" role="tablist" aria-label="Library">
+        <div className="segmented four" role="tablist" aria-label="Library">
           <button role="tab" aria-selected={tab === "queue"} className={tab === "queue" ? "on" : ""} onClick={() => setTab("queue")}><ListMusic size={13} /> Queue</button>
           <button role="tab" aria-selected={tab === "recent"} className={tab === "recent" ? "on" : ""} onClick={() => setTab("recent")}><Clock size={13} /> Recent</button>
+          <button role="tab" aria-selected={tab === "favs"} className={tab === "favs" ? "on" : ""} onClick={() => setTab("favs")}><Heart size={12} /> Favs</button>
+          <button role="tab" aria-selected={tab === "lists"} className={tab === "lists" ? "on" : ""} onClick={() => setTab("lists")}><ListPlus size={13} /> Lists</button>
         </div>
         <div className="list" role="list">
+          {(tab === "favs" || tab === "lists") && <ListsPane mode={tab} lists={lists} queue={queue} onPlay={(l, i) => { setShuffle(false); void playAt(l, i); }} />}
+          {(tab === "queue" || tab === "recent") && <>
           {list.length === 0 && <p className="list-empty">{tab === "queue" ? "Open or drop files to build your queue." : "Files you play will appear here."}</p>}
           {list.map((m, i) => {
             const playing = current?.path === m.path;
@@ -198,6 +285,7 @@ export default function App() {
               </button>
             );
           })}
+          </>}
         </div>
         <div className="sidebar-foot"><span className="dot" /> mpv engine</div>
       </aside>
@@ -206,6 +294,9 @@ export default function App() {
         <header className="titlebar">
           <div className="title-text">{current ? current.name : "OnePlay"}</div>
           <div className="title-actions">
+            {current && <FavButton lists={lists} media={current} />}
+            {current && <button className="icon-button" title="Add to playlist" onClick={() => setAddOpen(true)}><ListPlus size={16} /></button>}
+            {current && !AUDIO_EXT.test(current.path) && <button className="icon-button" title="Find subtitles" onClick={() => setSubsOpen(true)}><Search size={16} /></button>}
             <button className="icon-button" title="Wi-Fi sharing and phone sync" onClick={() => setShareOpen(true)}><Wifi size={16} /></button>
             <button className="icon-button" title="Load subtitles" onClick={() => window.oneplay.addSubtitle()}><Captions size={17} /></button>
             <button className="icon-button" title="Cycle subtitles (S)" onClick={() => window.oneplay.cycleSub()}><Layers size={16} /></button>
@@ -217,6 +308,7 @@ export default function App() {
           </div>
         </header>
 
+        {update && !dismissed && <div className="update-banner" role="status"><span className="grow">OnePlay {update.version} is available.</span><button onClick={() => window.oneplay.openUpdate(update.url)}>Download</button><button onClick={() => setDismissed(true)}>Later</button></div>}
         <div className="content">
           <div className={`video-stage ${current ? "has-media" : ""}`} ref={stageRef}>
             {!current && (
@@ -227,21 +319,30 @@ export default function App() {
                 <button className="primary-button wide" onClick={openFiles}><FolderOpen size={15} /> Open media</button>
               </div>
             )}
+            {current && AUDIO_EXT.test(current.path) && (
+              <div className="music-stage">
+                {art ? <img className="music-art" src={art} alt="" /> : <div className="music-art"><AudioLines size={64} /></div>}
+                <div className="music-title">{meta.title || current.name}</div>
+                <div className="music-sub">{[meta.artist, meta.album].filter(Boolean).join(" · ")}</div>
+              </div>
+            )}
             {info && <div className="stage-notice">{info}</div>}
           </div>
           {error && <div className="error-banner" role="alert">{error}</div>}
 
           <section className="transport" aria-label="Playback controls">
             <div className="now"><b>{current ? current.name : "Not playing"}</b><span>{upNext.length ? `${upNext.length} up next` : current ? "Last in queue" : "Nothing queued"}</span></div>
-            <div className="timeline">
+            <div className="timeline" ref={timelineRef}>
+              {hover && <div className="preview" style={{ left: hover.x }}>{hover.img && <img src={hover.img} alt="" />}<span>{clock(hover.t)}</span></div>}
               <span>{clock(position)}</span>
               <input aria-label="Seek" type="range" min={0} max={Math.max(duration, 1)} step={0.1} value={Math.min(position, duration || 0)}
-                style={{ ["--p" as string]: `${pct}%` }} onChange={(e) => window.oneplay.seek(Number(e.target.value))} />
+                style={{ ["--p" as string]: `${pct}%` }} onChange={(e) => window.oneplay.seek(Number(e.target.value))} onMouseMove={onTimelineMove} onMouseLeave={() => setHover(null)} />
               <span>-{clock(Math.max(0, duration - position))}</span>
             </div>
             <div className="controls">
               <div className="side">
                 <button className={`icon-button ${loop ? "active" : ""}`} aria-pressed={loop} title="Repeat this file (L)" onClick={toggleLoop}><Repeat size={17} /></button>
+                <button className={`icon-button ${shuffle ? "active" : ""}`} aria-pressed={shuffle} title="Shuffle" disabled={queue.length < 2} onClick={toggleShuffle}><Shuffle size={17} /></button>
                 <button className="chip" title="Playback speed" onClick={cycleSpeed}>{speed}×</button>
                 <button className="icon-button" title="A-B repeat (B)" onClick={() => window.oneplay.abLoop()}><Repeat1 size={17} /></button>
                 <button className="icon-button" title="Next frame (.)" onClick={() => window.oneplay.frameStep(false)}><StepForward size={17} /></button>
@@ -266,6 +367,8 @@ export default function App() {
           </section>
         </div>
       </section>
+      {subsOpen && current && <SubsPanel media={current} onClose={() => setSubsOpen(false)} />}
+      {addOpen && current && <AddToPlaylist media={current} lists={lists} onClose={() => setAddOpen(false)} />}
       {shareOpen && <SharePanel onClose={() => setShareOpen(false)} />}
       {dragging && <div className="drop-overlay"><div>Drop to play</div></div>}
     </main>

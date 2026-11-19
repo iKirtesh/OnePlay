@@ -29,6 +29,11 @@ A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 | **Subtitles and tracks** | Load `.srt` / `.ass` / `.vtt`, switch subtitle and audio tracks, chapter picker |
 | **Precision tools** | Speed 0.5x to 2x, A-B repeat, frame stepping, screenshots to your Pictures folder |
 | **Mini player** | Keep the window on top of everything else |
+| **Seek-bar previews** | Hover the timeline to see a thumbnail of that moment |
+| **Music mode** | Album art, track details and shuffle for audio files |
+| **Favorites and playlists** | Heart a video or build playlists, synced with your phone |
+| **Subtitle search** | Find and download subtitles from OpenSubtitles (needs a free account and API key) |
+| **Update notice** | Tells you when a newer version is released |
 | **Wi-Fi sharing** | Share folders with your phone on the same network, with synced resume points |
 
 **Shortcuts**
@@ -48,6 +53,8 @@ A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 - **VLC-style player gestures:** swipe to seek, swipe the left side for brightness and the right side for volume, double-tap to skip 10 s.
 - **Controls:** speed 0.25x to 3x, audio tracks, subtitles (including external `.srt` / `.vtt`), aspect modes, A-B repeat, frame step, sleep timer, screen lock, auto-rotate, picture-in-picture and background audio.
 - **Library tools:** search, favorites, sort, hide folders, continue-watching row and resume positions.
+- **Remote control:** play, pause, seek and change volume on your computer from the phone, or send a video to the computer to play.
+- **Favorites and playlists** sync with the computer, matched by file name.
 - **My computer:** browse and stream the folders you share from desktop OnePlay over Wi-Fi, and continue where you left off on the other device.
 - **Network streams:** paste an `https://` link (including `.m3u8`).
 - **VLC engine fallback** for files the native player can't open (MKV with DTS, HEVC and similar).
@@ -144,8 +151,9 @@ Push to `main` and CI does the rest.
 - [ ] Bundle mpv so nothing needs installing first
 - [ ] Embedded video on macOS and Wayland through libmpv
 - [x] Browse, stream and resume sync between phone and desktop over your local network (favorites sync still to do)
-- [ ] Use the phone as a remote control for the desktop player
-- [ ] Network streams and playlists on desktop
+- [x] Phone as a remote control for the desktop player
+- [x] Favorites and playlists synced between phone and desktop
+- [ ] Subtitle search on the phone
 - [ ] Cast to TV and an audio equalizer on mobile
 - [ ] Automated tests and accessibility pass
 

@@ -14,13 +14,16 @@ const MIME: Record<string, string> = { mp4: "video/mp4", m4v: "video/mp4", mkv: 
 const PORT = 8765;
 
 type Resume = { pos: number; dur: number; at: number };
-type Store = { folders: string[]; tokens: string[]; sync: Record<string, Resume> };
+type FavMap = Record<string, { on: boolean; at: number }>;
+type Playlist = { id: string; name: string; items: string[]; at: number; deleted?: boolean };
+export type Lists = { fav: FavMap; playlists: Record<string, Playlist> };
+type Store = { folders: string[]; tokens: string[]; sync: Record<string, Resume>; lists: Lists };
 type Entry = { id: string; path: string; name: string; size: number; ext: string };
 
 let server: http.Server | null = null;
 let port = PORT;
 let code = newCode();
-let store: Store = { folders: [], tokens: [], sync: {} };
+let store: Store = { folders: [], tokens: [], sync: {}, lists: { fav: {}, playlists: {} } };
 let files = new Map<string, Entry>();
 let tree: { id: string; name: string; items: Omit<Entry, "path">[] }[] = [];
 let treeAt = 0;
@@ -28,7 +31,7 @@ const fails = new Map<string, { n: number; until: number }>();
 
 function newCode() { return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0"); }
 const storeFile = () => path.join(app.getPath("userData"), "share.json");
-function load() { try { const s = JSON.parse(fs.readFileSync(storeFile(), "utf8")); store = { folders: s.folders ?? [], tokens: s.tokens ?? [], sync: s.sync ?? {} }; } catch { /* first run */ } }
+function load() { try { const s = JSON.parse(fs.readFileSync(storeFile(), "utf8")); store = { folders: s.folders ?? [], tokens: s.tokens ?? [], sync: s.sync ?? {}, lists: { fav: s.lists?.fav ?? {}, playlists: s.lists?.playlists ?? {} } }; } catch { /* first run */ } }
 let saveTimer: NodeJS.Timeout | null = null;
 function save() { if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch { /* disk unavailable */ } }, 500); }
 
@@ -91,6 +94,32 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     }
     return json(res, 200, store.sync);
   }
+  if (url.pathname === "/api/status") return json(res, 200, { ...(status ?? {}), online: !!status && Date.now() - statusAt < 5000 });
+  if (url.pathname === "/api/control" && req.method === "POST") {
+    let b: Record<string, unknown> = {}; try { b = JSON.parse(await readBody(req)); } catch { return json(res, 400, { error: "bad json" }); }
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    const cmd = String(b.cmd);
+    if (cmd === "playId") {
+      await rescan(false);
+      const e = files.get(String(b.id));
+      if (!e) return json(res, 404, { error: "Unknown file; refresh the library" });
+      if (!remoteHandler) return json(res, 503, { error: "Player not ready" });
+      remoteHandler({ cmd: "playFile", path: e.path }); return json(res, 200, { ok: true });
+    }
+    const out: Record<string, unknown> = { cmd };
+    if (["toggle", "play", "pause", "mute", "next", "prev"].includes(cmd)) { /* no argument */ }
+    else if (cmd === "seekBy" && num(b.by) !== null) out.by = Math.max(-3600, Math.min(3600, num(b.by)!));
+    else if (cmd === "seekTo" && num(b.to) !== null) out.to = Math.max(0, num(b.to)!);
+    else if (cmd === "volume" && num(b.value) !== null) out.value = Math.max(0, Math.min(100, num(b.value)!));
+    else if (cmd === "speed" && num(b.value) !== null) out.value = Math.max(0.25, Math.min(4, num(b.value)!));
+    else return json(res, 400, { error: "Unknown command" });
+    if (!remoteHandler) return json(res, 503, { error: "Player not ready" });
+    remoteHandler(out); return json(res, 200, { ok: true });
+  }
+  if (url.pathname === "/api/lists") {
+    if (req.method === "PUT") { try { mergeLists(JSON.parse(await readBody(req))); } catch { return json(res, 400, { error: "bad json" }); } }
+    return json(res, 200, store.lists);
+  }
   const m = url.pathname.match(/^\/file\/([0-9a-f]{16})$/);
   if (m) {
     const e = files.get(m[1]!);
@@ -109,6 +138,29 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     stream.pipe(res); return;
   }
   json(res, 404, { error: "Not found" });
+}
+
+let status: Record<string, unknown> | null = null;
+let statusAt = 0;
+let remoteHandler: ((cmd: Record<string, unknown>) => void) | null = null;
+let listsChanged: (() => void) | null = null;
+export function setStatus(s: Record<string, unknown>) { status = s; statusAt = Date.now(); }
+export function onRemoteCommand(fn: (cmd: Record<string, unknown>) => void) { remoteHandler = fn; }
+export function onListsChanged(fn: () => void) { listsChanged = fn; }
+export const getLists = () => store.lists;
+/** Merges favorites and playlists from another device; the newest change to each entry wins. */
+export function mergeLists(inc: Partial<Lists>) {
+  let changed = false;
+  for (const [k, v] of Object.entries(inc.fav ?? {})) if (v && typeof v.at === "number" && (store.lists.fav[k]?.at ?? 0) < v.at) { store.lists.fav[k] = { on: !!v.on, at: v.at }; changed = true; }
+  for (const [k, v] of Object.entries(inc.playlists ?? {})) if (v && typeof v.at === "number" && Array.isArray(v.items) && (store.lists.playlists[k]?.at ?? 0) < v.at) { store.lists.playlists[k] = { id: String(v.id ?? k), name: String(v.name ?? "Playlist").slice(0, 80), items: v.items.map(String).slice(0, 2000), at: v.at, deleted: !!v.deleted }; changed = true; }
+  if (changed) { save(); listsChanged?.(); }
+}
+/** Finds the full path of shared files by name, so playlists made on the phone can play here. */
+export async function resolveNames(keys: string[]): Promise<Record<string, string>> {
+  await rescan(false);
+  const want = new Set(keys.map((k) => k.toLowerCase())); const out: Record<string, string> = {};
+  for (const e of files.values()) { const k = e.name.toLowerCase(); if (want.has(k) && !out[k]) out[k] = e.path; }
+  return out;
 }
 
 let onChange: (() => void) | null = null;

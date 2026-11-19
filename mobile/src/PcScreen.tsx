@@ -4,7 +4,9 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from './theme';
 import type { Item } from './scan';
-import { Conn, PcFolder, clearConn, fetchLibrary, fileUrl, loadConn, pair } from './remote';
+import Slider from '@react-native-community/slider';
+import { Conn, PcFolder, PcStatus, clearConn, fetchLibrary, fileUrl, loadConn, pair, pcControl, pcStatus } from './remote';
+import { clock } from './theme';
 import type { Play } from './Library';
 
 const size = (n: number) => (n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1e6))} MB`);
@@ -18,6 +20,8 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
   const [open, setOpen] = useState<PcFolder | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [view, setView] = useState<'browse' | 'remote'>('browse');
+  const [note, setNote] = useState('');
 
   const load = useCallback(async (refresh = false) => {
     setBusy(true); setErr('');
@@ -47,6 +51,16 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
         {conn && !open ? <Pressable onPress={() => void load(true)} hitSlop={10}><Feather name="refresh-cw" size={20} color={t.accent} /></Pressable> : null}
         {conn && !open ? <Pressable onPress={() => { void clearConn().then(() => { setConn(null); setFolders([]); }); }} hitSlop={10}><Feather name="log-out" size={20} color={t.accent} /></Pressable> : null}
       </View>
+      {conn && !open ? (
+        <View style={{ flexDirection: 'row', marginHorizontal: 16, marginBottom: 8, backgroundColor: t.fill, borderRadius: 10, padding: 2 }}>
+          {(['browse', 'remote'] as const).map((k) => (
+            <Pressable key={k} onPress={() => setView(k)} style={{ flex: 1, paddingVertical: 6, borderRadius: 8, alignItems: 'center', backgroundColor: view === k ? t.panel : 'transparent' }}>
+              <Text style={{ color: t.text, fontWeight: view === k ? '600' : '400' }}>{k === 'browse' ? 'Browse' : 'Remote'}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {note ? <Text style={{ color: t.accent, textAlign: 'center', paddingBottom: 6 }}>{note}</Text> : null}
       {conn === undefined ? <ActivityIndicator style={{ marginTop: 60 }} color={t.accent} /> : null}
       {conn === null ? (
         <View style={{ padding: 20, gap: 12 }}>
@@ -58,6 +72,8 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
           </Pressable>
           {err ? <Text style={{ color: '#FF453A' }}>{err}</Text> : null}
         </View>
+      ) : conn && view === 'remote' && !open ? (
+        <RemotePad />
       ) : conn ? (
         <>
           {err ? <Text style={{ color: '#FF453A', paddingHorizontal: 16, paddingBottom: 8 }}>{err}</Text> : null}
@@ -78,11 +94,59 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
                 <Pressable onPress={() => play(open, index)} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 14 }}>
                   <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: t.fill, alignItems: 'center', justifyContent: 'center' }}><Feather name={/^(mp3|flac|wav|aac|ogg|opus|m4a)$/.test(item.ext) ? 'music' : 'film'} size={20} color={t.text2} /></View>
                   <View style={{ flex: 1 }}><Text numberOfLines={2} style={{ color: t.text, fontSize: 15, fontWeight: '500' }}>{item.name}</Text><Text style={{ color: t.text2, fontSize: 12 }}>{item.ext.toUpperCase()}  ·  {size(item.size)}</Text></View>
+                  <Pressable hitSlop={10} onPress={() => { void pcControl({ cmd: 'playId', id: item.id }).then(() => { setNote('Playing on your computer'); setTimeout(() => setNote(''), 2500); }).catch((e: Error) => setErr(e.message)); }}><Feather name="monitor" size={20} color={t.accent} /></Pressable>
                 </Pressable>
               )} />
           )}
         </>
       ) : null}
     </SafeAreaView>
+  );
+}
+
+/** Play, pause, seek and volume for the video that is playing on the computer. */
+function RemotePad() {
+  const t = useTheme();
+  const [st, setSt] = useState<PcStatus | null>(null);
+  const [err, setErr] = useState('');
+  const [scrub, setScrub] = useState<number | null>(null);
+  const [vol, setVol] = useState<number | null>(null);
+  const poll = useCallback(async () => { try { setSt(await pcStatus()); setErr(''); } catch (e) { setErr((e as Error).message); } }, []);
+  useEffect(() => { void poll(); const id = setInterval(poll, 1500); return () => clearInterval(id); }, [poll]);
+  const send = (body: Record<string, unknown>) => { void pcControl(body).then(() => setTimeout(poll, 250)).catch((e: Error) => setErr(e.message)); };
+  const on = !!st?.online && !!st.title;
+  const dur = st?.duration ?? 0;
+  const circle = (icon: React.ComponentProps<typeof Feather>['name'], onPress: () => void, big = false) => (
+    <Pressable onPress={onPress} disabled={!on} style={{ width: big ? 72 : 52, height: big ? 72 : 52, borderRadius: 36, backgroundColor: big ? t.accent : t.fill, alignItems: 'center', justifyContent: 'center', opacity: on ? 1 : 0.4 }}>
+      <Feather name={icon} size={big ? 30 : 22} color={big ? '#fff' : t.text} />
+    </Pressable>
+  );
+  return (
+    <View style={{ padding: 20, gap: 18 }}>
+      <View style={{ alignItems: 'center', gap: 4 }}>
+        <Feather name="monitor" size={40} color={on ? t.accent : t.text2} />
+        <Text numberOfLines={2} style={{ color: t.text, fontSize: 18, fontWeight: '600', textAlign: 'center' }}>{on ? st!.title : 'Nothing playing on your computer'}</Text>
+        {!on ? <Text style={{ color: t.text2, textAlign: 'center' }}>Start a video in OnePlay on the computer, or pick one in Browse and tap the monitor icon.</Text> : null}
+        {err ? <Text style={{ color: '#FF453A', textAlign: 'center' }}>{err}</Text> : null}
+      </View>
+      <View>
+        <Slider disabled={!on} minimumValue={0} maximumValue={Math.max(dur, 1)} value={scrub ?? st?.position ?? 0} minimumTrackTintColor={t.accent} maximumTrackTintColor={t.track} thumbTintColor={t.accent}
+          onValueChange={setScrub} onSlidingComplete={(v) => { setScrub(null); send({ cmd: 'seekTo', to: v }); }} />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 }}><Text style={{ color: t.text2, fontSize: 12 }}>{clock(scrub ?? st?.position ?? 0)}</Text><Text style={{ color: t.text2, fontSize: 12 }}>{clock(dur)}</Text></View>
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16 }}>
+        {circle('skip-back', () => send({ cmd: 'prev' }))}
+        {circle('rotate-ccw', () => send({ cmd: 'seekBy', by: -10 }))}
+        {circle(st?.paused ? 'play' : 'pause', () => send({ cmd: 'toggle' }), true)}
+        {circle('rotate-cw', () => send({ cmd: 'seekBy', by: 10 }))}
+        {circle('skip-forward', () => send({ cmd: 'next' }))}
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Pressable disabled={!on} onPress={() => send({ cmd: 'mute' })} hitSlop={8}><Feather name={st?.muted || (st?.volume ?? 1) === 0 ? 'volume-x' : 'volume-2'} size={22} color={on ? t.text : t.text2} /></Pressable>
+        <Slider style={{ flex: 1 }} disabled={!on} minimumValue={0} maximumValue={100} value={vol ?? st?.volume ?? 0} minimumTrackTintColor={t.accent} maximumTrackTintColor={t.track} thumbTintColor={t.accent}
+          onValueChange={setVol} onSlidingComplete={(v) => { setVol(null); send({ cmd: 'volume', value: Math.round(v) }); }} />
+        <Pressable disabled={!on} onPress={() => { const sp = [0.5, 0.75, 1, 1.25, 1.5, 2]; send({ cmd: 'speed', value: sp[(sp.indexOf(st?.speed ?? 1) + 1) % sp.length] ?? 1 }); }} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: t.fill }}><Text style={{ color: t.text, fontWeight: '600' }}>{st?.speed ?? 1}x</Text></Pressable>
+      </View>
+    </View>
   );
 }

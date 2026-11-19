@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { Lists } from './lists';
 
 /** Connection to OnePlay running on a computer on the same Wi-Fi. */
 export type Conn = { host: string; token: string; name: string };
@@ -64,4 +65,22 @@ export function pushResume(name: string, pos: number, dur: number) {
   if (!conn) return;
   const done = dur > 0 && (pos < 5 || pos > dur - 10);
   void call(conn.host, '/api/sync', { method: 'PUT', token: conn.token, timeout: 3000, body: { [nameKey(name)]: { pos: done ? 0 : pos, dur, at: Date.now() } } }).catch(() => {});
+}
+
+export type PcStatus = { title?: string; paused?: boolean; position?: number; duration?: number; volume?: number; muted?: boolean; speed?: number; index?: number; count?: number; online?: boolean };
+export async function pcStatus(): Promise<PcStatus> {
+  if (!conn) throw new Error('Not connected');
+  return call<PcStatus>(conn.host, '/api/status', { token: conn.token, timeout: 2500 });
+}
+export async function pcControl(body: Record<string, unknown>): Promise<void> {
+  if (!conn) throw new Error('Not connected');
+  await call(conn.host, '/api/control', { method: 'POST', token: conn.token, body, timeout: 4000 });
+}
+export async function pullPcLists(): Promise<Lists | null> {
+  if (!conn) return null;
+  try { return await call<Lists>(conn.host, '/api/lists', { token: conn.token, timeout: 4000 }); } catch { return null; }
+}
+export async function pushPcLists(l: Partial<Lists>) {
+  if (!conn) return;
+  try { await call(conn.host, '/api/lists', { method: 'PUT', token: conn.token, body: l, timeout: 4000 }); } catch { /* computer offline; synced next time */ }
 }

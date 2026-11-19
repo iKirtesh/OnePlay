@@ -14,6 +14,10 @@ export async function hasAccess(): Promise<boolean> {
   try { return (await MediaLibrary.getPermissionsAsync(false, ['video', 'audio'])).granted; } catch { return false; }
 }
 
+let current: Library | null = null;
+/** The most recent scan, shared with other screens (playlists). */
+export const getLibrary = () => current;
+
 const stripExt = (n: string) => n.replace(/\.[^.]+$/, '');
 const dirOf = (uri: string) => { try { const p = decodeURIComponent(uri.replace(/^file:\/\//, '')); return p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : ''; } catch { return ''; } };
 
@@ -34,7 +38,7 @@ export function group(items: Item[]): Library {
 
 const CACHE = 'oneplay.library.v2';
 export async function loadCached(): Promise<Library | null> {
-  try { const v = await AsyncStorage.getItem(CACHE); return v ? group(JSON.parse(v) as Item[]) : null; } catch { return null; }
+  try { const v = await AsyncStorage.getItem(CACHE); if (!v) return null; current = group(JSON.parse(v) as Item[]); return current; } catch { return null; }
 }
 
 /** Reads every video and audio file in every folder. Big pages, no album lookup, and results are reported while it is still reading. */
@@ -48,9 +52,10 @@ export async function scanLibrary(onPartial?: (l: Library) => void): Promise<Lib
       items.push({ id: a.id, uri: a.uri, name: stripExt(a.filename), kind: a.mediaType, duration: a.duration || 0, folderId: dirOf(a.uri) || a.albumId || 'Other', added: a.creationTime || 0 });
     }
     if (!res.hasNextPage) break;
-    if (onPartial) onPartial(group([...items]));
+    if (onPartial) { current = group([...items]); onPartial(current); }
     after = res.endCursor;
   }
   void AsyncStorage.setItem(CACHE, JSON.stringify(items)).catch(() => {});
-  return group(items);
+  current = group(items);
+  return current;
 }
