@@ -102,7 +102,8 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
 
   useEffect(() => { poke(); }, [poke]);
   useEffect(() => { void activateKeepAwakeAsync('oneplay'); return () => { void deactivateKeepAwake('oneplay'); }; }, []);
-  useEffect(() => () => { void ScreenOrientation.unlockAsync(); void Brightness.restoreSystemBrightnessAsync().catch(() => {}); }, []);
+  useEffect(() => { void ScreenOrientation.unlockAsync().catch(() => {}); return () => { void ScreenOrientation.unlockAsync().catch(() => {}); }; }, []);
+  useEffect(() => () => { void Brightness.restoreSystemBrightnessAsync().catch(() => {}); }, []);
   useEffect(() => { const s = BackHandler.addEventListener('hardwareBackPress', () => { if (sheet) setSheet(null); else onClose(); return true; }); return () => s.remove(); }, [sheet, onClose]);
 
   // Sleep timer counts down in minutes and pauses playback at zero.

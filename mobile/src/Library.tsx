@@ -84,7 +84,6 @@ export function LibraryScreen({ onPlay }: { onPlay: (p: Play) => void }) {
                 <Text numberOfLines={1} style={{ color: t.text, fontSize: 13, marginTop: 6 }}>{item.name}</Text>
               </Pressable>
             )} />
-          <Text style={{ color: t.text2, fontSize: 13, fontWeight: '600', padding: 16, paddingBottom: 6 }}>FOLDERS</Text>
         </View>
       ) : null}
     </View>
@@ -106,15 +105,18 @@ export function LibraryScreen({ onPlay }: { onPlay: (p: Play) => void }) {
   } else if (!lib) {
     body = <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}><ActivityIndicator color={t.accent} /><Text style={{ color: t.text2 }}>Scanning your folders…</Text></View>;
   } else if (!folder && tab === 'folders') {
+    type Row = { t: 'f'; f: Folder } | { t: 'h'; title: string } | { t: 'i'; i: Item };
+    const files = (lib?.items ?? []).filter((i) => !needle || i.name.toLowerCase().includes(needle));
+    const rows: Row[] = [{ t: 'h', title: 'FOLDERS' }, ...folders.map((f) => ({ t: 'f' as const, f })), { t: 'h', title: 'ALL FILES' }, ...files.map((i) => ({ t: 'i' as const, i }))];
     body = (
-      <FlatList data={folders} keyExtractor={(f) => f.id} ListHeaderComponent={header} refreshControl={<RefreshControl refreshing={busy} onRefresh={refresh} tintColor={t.accent} />}
-        ListEmptyComponent={<Text style={{ color: t.text2, textAlign: 'center', marginTop: 60 }}>No media found</Text>}
-        renderItem={({ item: f }) => (
-          <Pressable onPress={() => { setFolder(f); setQ(''); }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 14 }}>
+      <FlatList data={rows} keyExtractor={(r, n) => (r.t === 'f' ? 'f' + r.f.id : r.t === 'i' ? 'i' + r.i.id : 'h' + n)} ListHeaderComponent={!needle && recent.length ? header : null} refreshControl={<RefreshControl refreshing={busy} onRefresh={refresh} tintColor={t.accent} />}
+        initialNumToRender={14} windowSize={7}
+        renderItem={({ item: r }) => r.t === 'h' ? <Text style={{ color: t.text2, fontSize: 13, fontWeight: '600', padding: 16, paddingBottom: 6 }}>{r.title}</Text> : r.t === 'i' ? row(r.i, files) : (
+          <Pressable onPress={() => { setFolder(r.f); setQ(''); }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 14 }}>
             <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: t.fill, alignItems: 'center', justifyContent: 'center' }}><Feather name="folder" size={22} color={t.accent} /></View>
             <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '500' }}>{f.name}</Text>
-              <Text numberOfLines={1} style={{ color: t.text2, fontSize: 12, marginTop: 2 }}>{f.items.length} {f.items.length === 1 ? 'file' : 'files'}{f.path ? `  ·  ${f.path.replace(/^\/storage\/emulated\/0/, 'Internal')}` : ''}</Text>
+              <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '500' }}>{r.f.name}</Text>
+              <Text numberOfLines={1} style={{ color: t.text2, fontSize: 12, marginTop: 2 }}>{r.f.items.length} {r.f.items.length === 1 ? 'file' : 'files'}{r.f.path ? `  ·  ${r.f.path.replace(/^\/storage\/emulated\/0/, 'Internal')}` : ''}</Text>
             </View>
             <Feather name="chevron-right" size={18} color={t.text2} />
           </Pressable>

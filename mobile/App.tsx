@@ -11,7 +11,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="auto" />
       {play ? (
-        <PlayerScreen queue={play.queue} index={play.index} onClose={() => { void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {}); setPlay(null); }} />
+        <PlayerScreen queue={play.queue} index={play.index} onClose={() => { void ScreenOrientation.unlockAsync().catch(() => {}); setPlay(null); }} />
       ) : (
         <LibraryScreen onPlay={setPlay} />
       )}
