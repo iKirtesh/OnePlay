@@ -8,6 +8,8 @@ import Slider from '@react-native-community/slider';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Conn, PcFolder, PcStatus, clearConn, fetchLibrary, fileUrl, loadConn, pair, pairFromQr, parsePairQr, pcControl, pcStatus } from './remote';
 import { clock } from './theme';
+import { link } from './link';
+import { FollowScreen } from './FollowScreen';
 import type { Play } from './Library';
 
 const size = (n: number) => (n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1e6))} MB`);
@@ -23,6 +25,7 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
   const [err, setErr] = useState('');
   const [view, setView] = useState<'browse' | 'remote'>('browse');
   const [note, setNote] = useState('');
+  const [follow, setFollow] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [perm, askPerm] = useCameraPermissions();
   const scanned = React.useRef(false);
@@ -61,6 +64,7 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
   };
   const input = { color: t.text, backgroundColor: t.fill, borderRadius: 10, padding: 12, fontSize: 16 } as const;
 
+  if (follow) return <FollowScreen onClose={() => setFollow(false)} />;
   if (scanning) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -108,7 +112,7 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
           {err ? <Text style={{ color: '#FF453A' }}>{err}</Text> : null}
         </View>
       ) : conn && view === 'remote' && !open ? (
-        <RemotePad />
+        <RemotePad onFollow={() => setFollow(true)} />
       ) : conn ? (
         <>
           {err ? <Text style={{ color: '#FF453A', paddingHorizontal: 16, paddingBottom: 8 }}>{err}</Text> : null}
@@ -140,15 +144,21 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
 }
 
 /** Play, pause, seek and volume for the video that is playing on the computer. */
-function RemotePad() {
+function RemotePad({ onFollow }: { onFollow: () => void }) {
   const t = useTheme();
   const [st, setSt] = useState<PcStatus | null>(null);
   const [err, setErr] = useState('');
   const [scrub, setScrub] = useState<number | null>(null);
   const [vol, setVol] = useState<number | null>(null);
   const poll = useCallback(async () => { try { setSt(await pcStatus()); setErr(''); } catch (e) { setErr((e as Error).message); } }, []);
-  useEffect(() => { void poll(); const id = setInterval(poll, 1500); return () => clearInterval(id); }, [poll]);
-  const send = (body: Record<string, unknown>) => { void pcControl(body).then(() => setTimeout(poll, 250)).catch((e: Error) => setErr(e.message)); };
+  // The live connection delivers changes instantly; plain polling is only a slow safety net.
+  useEffect(() => {
+    link.acquire();
+    const off = link.onStatus((s) => { setSt(s); setErr(''); });
+    void poll(); const id = setInterval(() => { if (!link.connected) void poll(); }, 3000);
+    return () => { off(); clearInterval(id); link.release(); };
+  }, [poll]);
+  const send = (body: Record<string, unknown>) => { if (link.send(body)) return; void pcControl(body).then(() => setTimeout(poll, 250)).catch((e: Error) => setErr(e.message)); };
   const on = !!st?.online && !!st.title;
   const dur = st?.duration ?? 0;
   const circle = (icon: React.ComponentProps<typeof Feather>['name'], onPress: () => void, big = false) => (
@@ -164,6 +174,9 @@ function RemotePad() {
         {!on ? <Text style={{ color: t.text2, textAlign: 'center' }}>Start a video in OnePlay on the computer, or pick one in Browse and tap the monitor icon.</Text> : null}
         {err ? <Text style={{ color: '#FF453A', textAlign: 'center' }}>{err}</Text> : null}
       </View>
+      <Pressable onPress={onFollow} style={{ flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center', padding: 14, borderRadius: 14, backgroundColor: t.fill }}>
+        <Feather name="users" size={20} color={t.accent} /><Text style={{ color: t.accent, fontWeight: '700', fontSize: 16 }}>Watch together on this phone</Text>
+      </Pressable>
       <View>
         <Slider disabled={!on} minimumValue={0} maximumValue={Math.max(dur, 1)} value={scrub ?? st?.position ?? 0} minimumTrackTintColor={t.accent} maximumTrackTintColor={t.track} thumbTintColor={t.accent}
           onValueChange={setScrub} onSlidingComplete={(v) => { setScrub(null); send({ cmd: 'seekTo', to: v }); }} />

@@ -53,7 +53,8 @@ A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 - **VLC-style player gestures:** swipe to seek, swipe the left side for brightness and the right side for volume, double-tap to skip 10 s.
 - **Controls:** speed 0.25x to 3x, audio tracks, subtitles (including external `.srt` / `.vtt`), aspect modes, A-B repeat, frame step, sleep timer, screen lock, auto-rotate, picture-in-picture and background audio.
 - **Library tools:** search, favorites, sort, hide folders, continue-watching row and resume positions.
-- **Remote control:** play, pause, seek and change volume on your computer from the phone, or send a video to the computer to play.
+- **Remote control:** play, pause, seek and change volume on your computer from the phone, updated live, or send a video to the computer to play.
+- **Watch together:** the phone plays the same video as the computer and stays in step. Pause, seek or change speed on either device and the other follows.
 - **Favorites and playlists** sync with the computer, matched by file name.
 - **My computer:** browse and stream the folders you share from desktop OnePlay over Wi-Fi, and continue where you left off on the other device.
 - **Network streams:** paste an `https://` link (including `.m3u8`).
@@ -151,7 +152,8 @@ Push to `main` and CI does the rest.
 - [ ] Bundle mpv so nothing needs installing first
 - [ ] Embedded video on macOS and Wayland through libmpv
 - [x] Browse, stream and resume sync between phone and desktop over your local network (favorites sync still to do)
-- [x] Phone as a remote control for the desktop player
+- [x] Phone as a remote control for the desktop player, with live updates
+- [x] Watch together: phone and computer play in step
 - [x] Favorites and playlists synced between phone and desktop
 - [ ] Subtitle search on the phone
 - [ ] Cast to TV and an audio equalizer on mobile

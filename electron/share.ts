@@ -1,4 +1,5 @@
 import http from "node:http";
+import net from "node:net";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -25,6 +26,7 @@ let port = PORT;
 let code = newCode();
 let store: Store = { folders: [], tokens: [], sync: {}, lists: { fav: {}, playlists: {} } };
 let files = new Map<string, Entry>();
+let idByPath = new Map<string, string>();
 let tree: { id: string; name: string; items: Omit<Entry, "path">[] }[] = [];
 let treeAt = 0;
 const fails = new Map<string, { n: number; until: number }>();
@@ -64,7 +66,7 @@ async function rescan(force = false) {
     const list: Entry[] = []; await walk(root, 0, list);
     for (const e of list) { all.set(e.id, e); const dir = path.dirname(e.path); (byDir.get(dir) ?? byDir.set(dir, []).get(dir)!).push(e); }
   }
-  files = all; treeAt = Date.now();
+  files = all; idByPath = new Map([...all.values()].map((e) => [e.path, e.id])); treeAt = Date.now();
   tree = [...byDir.entries()].map(([dir, items]) => ({ id: crypto.createHash("sha1").update(dir).digest("hex").slice(0, 12), name: path.basename(dir) || dir, items: items.map(({ path: _p, ...rest }) => rest).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -72,6 +74,28 @@ const json = (res: http.ServerResponse, status: number, body: unknown) => { res.
 const readBody = (req: http.IncomingMessage) => new Promise<string>((resolve) => { let b = ""; req.on("data", (c) => { b += c; if (b.length > 2_000_000) req.destroy(); }); req.on("end", () => resolve(b)); });
 const tokenOf = (req: http.IncomingMessage, url: URL) => url.searchParams.get("t") ?? (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
 const authed = (req: http.IncomingMessage, url: URL) => { const t = tokenOf(req, url); return !!t && store.tokens.some((x) => x.length === t.length && crypto.timingSafeEqual(Buffer.from(x), Buffer.from(t))); };
+
+/** Validates a remote command and passes it to the player. Used by both HTTP and the live connection. */
+async function runCommand(b: Record<string, unknown>): Promise<{ code: number; body: unknown }> {
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const cmd = String(b.cmd);
+  if (cmd === "playId") {
+    await rescan(false);
+    const e = files.get(String(b.id));
+    if (!e) return { code: 404, body: { error: "Unknown file; refresh the library" } };
+    if (!remoteHandler) return { code: 503, body: { error: "Player not ready" } };
+    remoteHandler({ cmd: "playFile", path: e.path }); return { code: 200, body: { ok: true } };
+  }
+  const out: Record<string, unknown> = { cmd };
+  if (["toggle", "play", "pause", "mute", "next", "prev"].includes(cmd)) { /* no argument */ }
+  else if (cmd === "seekBy" && num(b.by) !== null) out.by = Math.max(-3600, Math.min(3600, num(b.by)!));
+  else if (cmd === "seekTo" && num(b.to) !== null) out.to = Math.max(0, num(b.to)!);
+  else if (cmd === "volume" && num(b.value) !== null) out.value = Math.max(0, Math.min(100, num(b.value)!));
+  else if (cmd === "speed" && num(b.value) !== null) out.value = Math.max(0.25, Math.min(4, num(b.value)!));
+  else return { code: 400, body: { error: "Unknown command" } };
+  if (!remoteHandler) return { code: 503, body: { error: "Player not ready" } };
+  remoteHandler(out); return { code: 200, body: { ok: true } };
+}
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const ip = req.socket.remoteAddress ?? "";
@@ -98,24 +122,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   if (url.pathname === "/api/status") return json(res, 200, { ...(status ?? {}), online: !!status && Date.now() - statusAt < 5000 });
   if (url.pathname === "/api/control" && req.method === "POST") {
     let b: Record<string, unknown> = {}; try { b = JSON.parse(await readBody(req)); } catch { return json(res, 400, { error: "bad json" }); }
-    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
-    const cmd = String(b.cmd);
-    if (cmd === "playId") {
-      await rescan(false);
-      const e = files.get(String(b.id));
-      if (!e) return json(res, 404, { error: "Unknown file; refresh the library" });
-      if (!remoteHandler) return json(res, 503, { error: "Player not ready" });
-      remoteHandler({ cmd: "playFile", path: e.path }); return json(res, 200, { ok: true });
-    }
-    const out: Record<string, unknown> = { cmd };
-    if (["toggle", "play", "pause", "mute", "next", "prev"].includes(cmd)) { /* no argument */ }
-    else if (cmd === "seekBy" && num(b.by) !== null) out.by = Math.max(-3600, Math.min(3600, num(b.by)!));
-    else if (cmd === "seekTo" && num(b.to) !== null) out.to = Math.max(0, num(b.to)!);
-    else if (cmd === "volume" && num(b.value) !== null) out.value = Math.max(0, Math.min(100, num(b.value)!));
-    else if (cmd === "speed" && num(b.value) !== null) out.value = Math.max(0.25, Math.min(4, num(b.value)!));
-    else return json(res, 400, { error: "Unknown command" });
-    if (!remoteHandler) return json(res, 503, { error: "Player not ready" });
-    remoteHandler(out); return json(res, 200, { ok: true });
+    const r = await runCommand(b); return json(res, r.code, r.body);
   }
   if (url.pathname === "/api/lists") {
     if (req.method === "PUT") { try { mergeLists(JSON.parse(await readBody(req))); } catch { return json(res, 400, { error: "bad json" }); } }
@@ -145,7 +152,11 @@ let status: Record<string, unknown> | null = null;
 let statusAt = 0;
 let remoteHandler: ((cmd: Record<string, unknown>) => void) | null = null;
 let listsChanged: (() => void) | null = null;
-export function setStatus(s: Record<string, unknown>) { status = s; statusAt = Date.now(); }
+export function setStatus(s: Record<string, unknown>) {
+  const { path: p, ...rest } = s as { path?: string } & Record<string, unknown>;
+  status = { ...rest, id: typeof p === "string" ? idByPath.get(p) ?? null : null }; statusAt = Date.now();
+  broadcast({ type: "status", ...status, online: true });
+}
 export function onRemoteCommand(fn: (cmd: Record<string, unknown>) => void) { remoteHandler = fn; }
 export function onListsChanged(fn: () => void) { listsChanged = fn; }
 export const getLists = () => store.lists;
@@ -164,6 +175,60 @@ export async function resolveNames(keys: string[]): Promise<Record<string, strin
   return out;
 }
 
+/* ---------- Live connection (WebSocket, written by hand so no extra package is needed) ---------- */
+const clients = new Set<net.Socket>();
+const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+function frame(opcode: number, payload: Buffer): Buffer {
+  const n = payload.length;
+  const head = n < 126 ? Buffer.from([0x80 | opcode, n]) : n < 65536 ? Buffer.from([0x80 | opcode, 126, n >> 8, n & 255]) : (() => { const b = Buffer.alloc(10); b[0] = 0x80 | opcode; b[1] = 127; b.writeBigUInt64BE(BigInt(n), 2); return b; })();
+  return Buffer.concat([head, payload]);
+}
+const sendJson = (sock: net.Socket, v: unknown) => { if (!sock.destroyed) sock.write(frame(0x1, Buffer.from(JSON.stringify(v)))); };
+function broadcast(v: unknown) { for (const c of clients) sendJson(c, v); }
+
+function upgrade(req: http.IncomingMessage, sock: net.Socket) {
+  const refuse = (code: string) => { sock.write(`HTTP/1.1 ${code}\r\nConnection: close\r\n\r\n`); sock.destroy(); };
+  if (!isPrivate(req.socket.remoteAddress ?? "")) return refuse("403 Forbidden");
+  const url = new URL(req.url ?? "/", "http://x");
+  const key = req.headers["sec-websocket-key"];
+  if (url.pathname !== "/ws" || typeof key !== "string") return refuse("404 Not Found");
+  if (!authed(req, url)) return refuse("401 Unauthorized");
+  const accept = crypto.createHash("sha1").update(key + GUID).digest("base64");
+  sock.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+  clients.add(sock);
+  sock.setNoDelay(true);
+  let buf = Buffer.alloc(0);
+  sendJson(sock, { type: "hello", name: os.hostname() });
+  if (status) sendJson(sock, { type: "status", ...status, online: Date.now() - statusAt < 5000 });
+  sock.on("data", (chunk) => {
+    buf = Buffer.concat([buf, chunk]);
+    if (buf.length > 1_000_000) { sock.destroy(); return; }
+    for (;;) {
+      if (buf.length < 2) return;
+      const fin = (buf[0]! & 0x80) !== 0, op = buf[0]! & 0x0f, masked = (buf[1]! & 0x80) !== 0;
+      let len = buf[1]! & 0x7f, off = 2;
+      if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
+      else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
+      if (len > 65536 || !masked || !fin) { sock.destroy(); return; }
+      if (buf.length < off + 4 + len) return;
+      const mask = buf.subarray(off, off + 4); const data = Buffer.from(buf.subarray(off + 4, off + 4 + len));
+      for (let i = 0; i < data.length; i++) data[i]! ^= mask[i % 4]!;
+      buf = buf.subarray(off + 4 + len);
+      if (op === 0x8) { sock.write(frame(0x8, Buffer.alloc(0))); sock.end(); return; }
+      if (op === 0x9) { sock.write(frame(0xa, data)); continue; }
+      if (op === 0x1) {
+        try {
+          const m = JSON.parse(data.toString("utf8"));
+          if (m?.type === "cmd") void runCommand(m).then((r) => { if (r.code !== 200) sendJson(sock, { type: "error", ...(r.body as object) }); });
+        } catch { /* ignore malformed message */ }
+      }
+    }
+  });
+  const drop = () => clients.delete(sock);
+  sock.on("close", drop); sock.on("error", () => { drop(); sock.destroy(); });
+}
+setInterval(() => { for (const c of clients) if (!c.destroyed) c.write(frame(0x9, Buffer.alloc(0))); }, 25000).unref?.();
+
 let onChange: (() => void) | null = null;
 const notify = () => onChange?.();
 
@@ -176,12 +241,13 @@ export function startShare(): Promise<boolean> {
   return new Promise((resolve) => {
     const s = http.createServer((q, r) => { handle(q, r).catch(() => { try { r.writeHead(500); r.end(); } catch { /* closed */ } }); });
     let tries = 0;
+    s.on("upgrade", (req, sock) => upgrade(req, sock as net.Socket));
     s.on("error", (e: NodeJS.ErrnoException) => { if (e.code === "EADDRINUSE" && tries++ < 10) { port++; s.listen(port, "0.0.0.0"); } else resolve(false); });
     s.on("listening", () => { server = s; notify(); resolve(true); });
     s.listen(port, "0.0.0.0");
   });
 }
-export function stopShare() { server?.close(); server?.closeAllConnections?.(); server = null; notify(); }
+export function stopShare() { for (const c of clients) c.destroy(); clients.clear(); server?.close(); server?.closeAllConnections?.(); server = null; notify(); }
 export function addFolder(dir: string) { if (!store.folders.includes(dir)) { store.folders.push(dir); treeAt = 0; save(); notify(); } }
 export function removeFolder(dir: string) { store.folders = store.folders.filter((f) => f !== dir); treeAt = 0; save(); notify(); }
 export function regenerateCode() { code = newCode(); notify(); }

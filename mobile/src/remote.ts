@@ -48,9 +48,15 @@ export async function pair(hostInput: string, code: string, timeout?: number): P
   await AsyncStorage.setItem(KEY, JSON.stringify(conn)).catch(() => {});
   return conn;
 }
+let lastFolders: PcFolder[] = [];
+/** Finds one shared file by its id, refreshing the list once if it is not known yet. */
+export async function findPcItem(id: string): Promise<{ item: PcItem; folder: PcFolder } | null> {
+  const look = () => { for (const f of lastFolders) { const item = f.items.find((i) => i.id === id); if (item) return { item, folder: f }; } return null; };
+  return look() ?? (await fetchLibrary(true).then(look).catch(() => null));
+}
 export async function fetchLibrary(refresh = false): Promise<PcFolder[]> {
   if (!conn) throw new Error('Not connected');
-  try { return (await call<{ folders: PcFolder[] }>(conn.host, `/api/library${refresh ? '?refresh=1' : ''}`, { token: conn.token, timeout: 30000 })).folders; }
+  try { lastFolders = (await call<{ folders: PcFolder[] }>(conn.host, `/api/library${refresh ? '?refresh=1' : ''}`, { token: conn.token, timeout: 30000 })).folders; return lastFolders; }
   catch (e) { if ((e as Error).message === 'Not paired') await clearConn(); throw e; }
 }
 export const fileUrl = (id: string) => (conn ? `http://${conn.host}/file/${id}?t=${conn.token}` : '');

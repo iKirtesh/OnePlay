@@ -110,11 +110,22 @@ export default function App() {
     return true;
   }, [playAt]);
 
+  // What is playing goes out once a second, and immediately when anything changes, so phones stay in step.
+  const pushStatus = useCallback(() => {
+    const l = live.current; const cur = l.queue[l.index];
+    void window.oneplay.shareStatus({ title: cur?.name ?? "", path: cur?.path ?? "", paused: l.paused, position: l.position, duration: l.duration, volume: l.volume, muted: l.muted, speed: l.speed, index: l.index, count: l.queue.length });
+  }, []);
+  useEffect(() => { const id = setInterval(pushStatus, 1000); return () => clearInterval(id); }, [pushStatus]);
+  useEffect(() => { pushStatus(); }, [paused, speed, volume, muted, current?.path, index, pushStatus]);
+  const lastPos = useRef(0);
+
   useEffect(() => window.oneplay.onStatus((s: any) => {
     if (s.event === "property-change") {
       const { name, data } = s;
       if (name === "pause") setPaused(Boolean(data));
       if (name === "time-pos" && typeof data === "number") {
+        if (Math.abs(data - lastPos.current) > 1.5) setTimeout(pushStatus, 60); // a seek: tell the phone straight away
+        lastPos.current = data;
         setPosition(data);
         const { queue: q, index: i, duration: d } = live.current;
         if (i >= 0 && q[i] && Date.now() - lastSave.current > 5000) { lastSave.current = Date.now(); writeResume(q[i]!.path, data, d); }
@@ -137,7 +148,7 @@ export default function App() {
     }
     if (s.event === "error") setError(s.message);
     if (s.event === "info") setInfo(s.message);
-  }), [playAt]);
+  }), [playAt, pushStatus]);
 
   useEffect(() => window.oneplay.onFullscreen(setFullscreen), []);
 
@@ -176,14 +187,6 @@ export default function App() {
     else if (c.cmd === "speed") { const v = Number(c.value) || 1; setSpeed(v); void window.oneplay.setSpeed(v); }
   };
   useEffect(() => window.oneplay.onRemote((c) => remote.current(c)), []);
-  useEffect(() => {
-    const id = setInterval(() => {
-      const l = live.current; const cur = l.queue[l.index];
-      void window.oneplay.shareStatus({ title: cur?.name ?? "", paused: l.paused, position: l.position, duration: l.duration, volume: l.volume, muted: l.muted, speed: l.speed, index: l.index, count: l.queue.length });
-    }, 1000);
-    return () => clearInterval(id);
-  }, []);
-
   const toggleShuffle = () => {
     const { queue: q, index: i } = live.current;
     if (!shuffle) {

@@ -11,6 +11,7 @@ import type { Item } from './scan';
 import * as DocumentPicker from 'expo-document-picker';
 import { getResume, saveResume } from './storage';
 import { pushResume, remoteResume } from './remote';
+import { link, LiveStatus } from './link';
 import { Cue, cueAt, findSibling, readSubs } from './subs';
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
@@ -20,7 +21,7 @@ const FIT_LABEL = { contain: 'Fit', cover: 'Fill screen', fill: 'Stretch' } as c
 type Sheet = null | 'speed' | 'audio' | 'subs' | 'sleep' | 'more';
 type Track = { id: string; label: string; language: string } | null;
 
-export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: Item[]; index: number; onClose: () => void; onVlc?: (i: Item) => void }) {
+export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { queue: Item[]; index: number; onClose: () => void; onVlc?: (i: Item) => void; sync?: boolean }) {
   const { width, height } = useWindowDimensions();
   const [index, setIndex] = useState(start);
   const item = queue[index];
@@ -52,6 +53,26 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: I
   const live = useRef({ index, queue, loop, pos: 0, dur: 0 });
   live.current = { index, queue, loop, pos, dur };
   const lastPush = useRef(0);
+  const syncOn = !!sync;
+  const applyRef = useRef<(st: LiveStatus) => void>(() => {});
+  // Watch together: follow the computer's play/pause, position and speed, and correct drift.
+  applyRef.current = (st) => {
+    const cur = live.current.queue[live.current.index];
+    if (!st.online || !cur || (st.title ?? '').toLowerCase() !== cur.name.toLowerCase()) return;
+    const base = st.speed || 1;
+    if (st.paused && player.playing) player.pause(); else if (!st.paused && !player.playing) player.play();
+    const expected = (st.position ?? 0) + (st.paused ? 0 : ((Date.now() - st.recvAt) / 1000) * base);
+    const drift = player.currentTime - expected;
+    if (Math.abs(drift) > 0.8) player.currentTime = Math.max(0, expected);
+    player.playbackRate = !st.paused && Math.abs(drift) > 0.15 && Math.abs(drift) <= 0.8 ? base * (drift > 0 ? 0.97 : 1.03) : base;
+    setSpeed((s) => (s === base ? s : base));
+  };
+  useEffect(() => {
+    if (!syncOn) return;
+    link.acquire();
+    const off = link.onStatus((st) => applyRef.current(st));
+    return () => { off(); link.release(); };
+  }, [syncOn]);
   const abRef = useRef(ab); abRef.current = ab;
   const isAudio = item?.kind === 'audio';
 
@@ -80,11 +101,12 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: I
         player.playbackRate = speed;
         const r = getResume(item.uri);
         let startAt = r?.pos ?? 0;
-        const rem = await remoteResume(item.name);
+        const rem = syncOn ? null : await remoteResume(item.name);
         if (rem && rem.at > (r?.at ?? 0)) startAt = rem.pos;
         if (!alive) return;
-        if (startAt > 5) player.currentTime = startAt;
+        if (!syncOn && startAt > 5) player.currentTime = startAt;
         player.play();
+        if (syncOn && link.last) applyRef.current(link.last);
       } catch (e) { if (alive) setError(String((e as Error)?.message ?? 'Cannot play this file')); }
     })();
     return () => { alive = false; saveResume(item.uri, live.current.pos, live.current.dur); pushResume(item.name, live.current.pos, live.current.dur); };
@@ -108,7 +130,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: I
       player.addListener('playToEnd', () => {
         const l = live.current;
         const cur = l.queue[l.index]; if (cur) saveResume(cur.uri, 0, 1);
-        if (!l.loop && l.index < l.queue.length - 1) setIndex(l.index + 1);
+        if (!syncOn && !l.loop && l.index < l.queue.length - 1) setIndex(l.index + 1);
       }),
     ];
     return () => subs.forEach((s) => s.remove());
@@ -127,11 +149,11 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: I
     return () => clearTimeout(id);
   }, [sleepLeft, player, flash]);
 
-  const seekTo = (t: number) => { const d = live.current.dur || Infinity; player.currentTime = Math.max(0, Math.min(d, t)); };
+  const seekTo = (t: number) => { const d = live.current.dur || Infinity; const c = Math.max(0, Math.min(d, t)); player.currentTime = c; if (syncOn) link.send({ cmd: 'seekTo', to: c }); };
   const skip = (s: number) => { seekTo(live.current.pos + s); flash(s > 0 ? 'fast-forward' : 'rewind', `${s > 0 ? '+' : ''}${s}s`); };
-  const toggle = () => { if (player.playing) player.pause(); else player.play(); };
-  const go = (d: number) => { const n = live.current.index + d; if (n >= 0 && n < live.current.queue.length) setIndex(n); };
-  const setRate = (r: number) => { player.playbackRate = r; setSpeed(r); flash('zap', `${r}x`); };
+  const toggle = () => { const was = player.playing; if (was) player.pause(); else player.play(); if (syncOn) link.send({ cmd: was ? 'pause' : 'play' }); };
+  const go = (d: number) => { if (syncOn) { link.send({ cmd: d > 0 ? 'next' : 'prev' }); return; } const n = live.current.index + d; if (n >= 0 && n < live.current.queue.length) setIndex(n); };
+  const setRate = (r: number) => { player.playbackRate = r; setSpeed(r); if (syncOn) link.send({ cmd: 'speed', value: r }); flash('zap', `${r}x`); };
 
   // Gestures: swipe sideways = seek, left edge up/down = brightness, right edge up/down = volume, double tap sides = skip.
   const g = useRef({ mode: '' as '' | 'seek' | 'bright' | 'vol', start: 0, sx: 0, sy: 0, lastTap: 0, lastSide: 0, base: 0 });
@@ -232,7 +254,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: I
         <>
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: 32, paddingHorizontal: 8, paddingBottom: 18, backgroundColor: 'rgba(0,0,0,0.55)', flexDirection: 'row', alignItems: 'center' }}>
             {btn('chevron-down', onClose, 28)}
-            <View style={{ flex: 1 }}><Text numberOfLines={1} style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{item.name}</Text>{queue.length > 1 ? <Text style={{ color: '#ccc', fontSize: 12 }}>{index + 1} / {queue.length}</Text> : null}</View>
+            <View style={{ flex: 1 }}><Text numberOfLines={1} style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{item.name}</Text>{syncOn ? <Text style={{ color: '#7FD1FF', fontSize: 12 }}>Watching together with your computer</Text> : queue.length > 1 ? <Text style={{ color: '#ccc', fontSize: 12 }}>{index + 1} / {queue.length}</Text> : null}</View>
             {btn('lock', () => setLocked(true))}
             {btn('rotate-cw', () => void rotate())}
           </View>
