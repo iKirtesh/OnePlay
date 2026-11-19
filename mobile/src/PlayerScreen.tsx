@@ -1,0 +1,241 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler, Modal, PanResponder, Pressable, StatusBar as RNStatusBar, Text, View, useWindowDimensions } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import * as Brightness from 'expo-brightness';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { clock } from './theme';
+import type { Item } from './scan';
+import { getResume, saveResume } from './storage';
+
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
+const SLEEP = [0, 15, 30, 45, 60, 90];
+const FITS = ['contain', 'cover', 'fill'] as const;
+const FIT_LABEL = { contain: 'Fit', cover: 'Fill screen', fill: 'Stretch' } as const;
+type Sheet = null | 'speed' | 'audio' | 'subs' | 'sleep';
+type Track = { id: string; label: string; language: string } | null;
+
+export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; index: number; onClose: () => void }) {
+  const { width, height } = useWindowDimensions();
+  const [index, setIndex] = useState(start);
+  const item = queue[index];
+  const [playing, setPlaying] = useState(true);
+  const [pos, setPos] = useState(0);
+  const [dur, setDur] = useState(item?.duration ?? 0);
+  const [scrub, setScrub] = useState<number | null>(null);
+  const [show, setShow] = useState(true);
+  const [locked, setLocked] = useState(false);
+  const [fit, setFit] = useState<(typeof FITS)[number]>('contain');
+  const [speed, setSpeed] = useState(1);
+  const [loop, setLoop] = useState(false);
+  const [sheet, setSheet] = useState<Sheet>(null);
+  const [audioTracks, setAudioTracks] = useState<NonNullable<Track>[]>([]);
+  const [subTracks, setSubTracks] = useState<NonNullable<Track>[]>([]);
+  const [audioSel, setAudioSel] = useState<string | null>(null);
+  const [subSel, setSubSel] = useState<string | null>(null);
+  const [hud, setHud] = useState<{ icon: React.ComponentProps<typeof Feather>['name']; text: string } | null>(null);
+  const [sleepLeft, setSleepLeft] = useState(0);
+  const [error, setError] = useState('');
+  const viewRef = useRef<VideoView>(null);
+  const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const player = useVideoPlayer(null, (p) => { p.timeUpdateEventInterval = 0.25; p.showNowPlayingNotification = true; p.staysActiveInBackground = true; });
+  const live = useRef({ index, queue, loop, pos: 0, dur: 0 });
+  live.current = { index, queue, loop, pos, dur };
+  const isAudio = item?.kind === 'audio';
+
+  const flash = useCallback((icon: NonNullable<typeof hud>['icon'], text: string) => {
+    setHud({ icon, text });
+    if (hudTimer.current) clearTimeout(hudTimer.current);
+    hudTimer.current = setTimeout(() => setHud(null), 800);
+  }, []);
+  const poke = useCallback(() => {
+    setShow(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setShow(false), 3500);
+  }, []);
+
+  // Load the current file and continue where you left off.
+  useEffect(() => {
+    if (!item) return;
+    let alive = true;
+    setError(''); setPos(0); setDur(item.duration); setAudioTracks([]); setSubTracks([]); setAudioSel(null); setSubSel(null);
+    void (async () => {
+      try {
+        await player.replaceAsync({ uri: item.uri, metadata: { title: item.name } });
+        if (!alive) return;
+        player.loop = live.current.loop;
+        player.playbackRate = speed;
+        const r = getResume(item.uri);
+        if (r && r.pos > 5) player.currentTime = r.pos;
+        player.play();
+      } catch (e) { if (alive) setError(String((e as Error)?.message ?? 'Cannot play this file')); }
+    })();
+    return () => { alive = false; saveResume(item.uri, live.current.pos, live.current.dur); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.uri]);
+
+  useEffect(() => {
+    const readTracks = () => {
+      setAudioTracks(player.availableAudioTracks as NonNullable<Track>[]);
+      setSubTracks(player.availableSubtitleTracks as NonNullable<Track>[]);
+      setAudioSel(player.audioTrack?.id ?? null);
+      setSubSel(player.subtitleTrack?.id ?? null);
+    };
+    const subs = [
+      player.addListener('playingChange', (e) => setPlaying(e.isPlaying)),
+      player.addListener('timeUpdate', (e) => setPos(e.currentTime)),
+      player.addListener('sourceLoad', (e) => { setDur(e.duration); readTracks(); }),
+      player.addListener('availableAudioTracksChange', readTracks),
+      player.addListener('availableSubtitleTracksChange', readTracks),
+      player.addListener('statusChange', (e) => { if (e.status === 'error') setError(e.error?.message ?? 'Cannot play this file'); }),
+      player.addListener('playToEnd', () => {
+        const l = live.current;
+        const cur = l.queue[l.index]; if (cur) saveResume(cur.uri, 0, 1);
+        if (!l.loop && l.index < l.queue.length - 1) setIndex(l.index + 1);
+      }),
+    ];
+    return () => subs.forEach((s) => s.remove());
+  }, [player]);
+
+  useEffect(() => { poke(); }, [poke]);
+  useEffect(() => { void activateKeepAwakeAsync('oneplay'); return () => { void deactivateKeepAwake('oneplay'); }; }, []);
+  useEffect(() => () => { void ScreenOrientation.unlockAsync(); void Brightness.restoreSystemBrightnessAsync().catch(() => {}); }, []);
+  useEffect(() => { const s = BackHandler.addEventListener('hardwareBackPress', () => { if (sheet) setSheet(null); else onClose(); return true; }); return () => s.remove(); }, [sheet, onClose]);
+
+  // Sleep timer counts down in minutes and pauses playback at zero.
+  useEffect(() => {
+    if (sleepLeft <= 0) return;
+    const id = setTimeout(() => { if (sleepLeft <= 1) { player.pause(); setSleepLeft(0); flash('moon', 'Sleep timer'); } else setSleepLeft(sleepLeft - 1); }, 60000);
+    return () => clearTimeout(id);
+  }, [sleepLeft, player, flash]);
+
+  const seekTo = (t: number) => { const d = live.current.dur || Infinity; player.currentTime = Math.max(0, Math.min(d, t)); };
+  const skip = (s: number) => { seekTo(live.current.pos + s); flash(s > 0 ? 'fast-forward' : 'rewind', `${s > 0 ? '+' : ''}${s}s`); };
+  const toggle = () => { if (player.playing) player.pause(); else player.play(); };
+  const go = (d: number) => { const n = live.current.index + d; if (n >= 0 && n < live.current.queue.length) setIndex(n); };
+  const setRate = (r: number) => { player.playbackRate = r; setSpeed(r); flash('zap', `${r}x`); };
+
+  // Gestures: swipe sideways = seek, left edge up/down = brightness, right edge up/down = volume, double tap sides = skip.
+  const g = useRef({ mode: '' as '' | 'seek' | 'bright' | 'vol', start: 0, sx: 0, sy: 0, lastTap: 0, lastSide: 0, base: 0 });
+  const pan = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: (e) => { g.current.mode = ''; g.current.sx = e.nativeEvent.pageX; g.current.sy = e.nativeEvent.pageY; },
+    onPanResponderMove: async (e, s) => {
+      const st = g.current; const w = width, h = height;
+      if (!st.mode) {
+        if (Math.abs(s.dx) < 14 && Math.abs(s.dy) < 14) return;
+        if (Math.abs(s.dx) > Math.abs(s.dy)) { st.mode = 'seek'; st.base = live.current.pos; }
+        else if (st.sx < w / 2) { st.mode = 'bright'; try { st.base = await Brightness.getBrightnessAsync(); } catch { st.base = 0.5; } }
+        else { st.mode = 'vol'; st.base = player.volume; }
+      }
+      if (st.mode === 'seek') { const t = Math.max(0, Math.min(live.current.dur || 1e9, st.base + s.dx / 6)); st.start = t; flash(s.dx > 0 ? 'fast-forward' : 'rewind', `${clock(t)}  (${s.dx > 0 ? '+' : '-'}${Math.round(Math.abs(t - st.base))}s)`); }
+      else if (st.mode === 'bright') { const v = Math.max(0.02, Math.min(1, st.base - s.dy / (h * 0.8))); void Brightness.setBrightnessAsync(v).catch(() => {}); flash('sun', `${Math.round(v * 100)}%`); }
+      else if (st.mode === 'vol') { const v = Math.max(0, Math.min(1, st.base - s.dy / (h * 0.8))); player.volume = v; flash(v === 0 ? 'volume-x' : 'volume-2', `${Math.round(v * 100)}%`); }
+    },
+    onPanResponderRelease: (e, s) => {
+      const st = g.current;
+      if (st.mode === 'seek') { seekTo(st.start); st.mode = ''; return; }
+      if (st.mode) { st.mode = ''; return; }
+      if (Math.abs(s.dx) > 10 || Math.abs(s.dy) > 10) return;
+      const now = Date.now(); const side = e.nativeEvent.pageX < width / 2 ? -1 : 1;
+      if (now - st.lastTap < 320 && side === st.lastSide) { skip(side * 10); st.lastTap = 0; return; }
+      st.lastTap = now; st.lastSide = side;
+      setTimeout(() => { if (g.current.lastTap === now) { if (hideTimer.current) clearTimeout(hideTimer.current); setShow((v) => { if (!v) poke(); return !v; }); } }, 330);
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [width, height]);
+
+  const rotate = async () => {
+    const o = await ScreenOrientation.getOrientationAsync();
+    const portrait = o === ScreenOrientation.Orientation.PORTRAIT_UP || o === ScreenOrientation.Orientation.PORTRAIT_DOWN;
+    await ScreenOrientation.lockAsync(portrait ? ScreenOrientation.OrientationLock.LANDSCAPE : ScreenOrientation.OrientationLock.PORTRAIT_UP);
+  };
+  const pickAudio = (id: string | null) => { const t = audioTracks.find((x) => x.id === id); if (t) { player.audioTrack = t as never; setAudioSel(t.id); } setSheet(null); };
+  const pickSub = (id: string | null) => { const t = subTracks.find((x) => x.id === id) ?? null; player.subtitleTrack = t as never; setSubSel(t?.id ?? null); setSheet(null); };
+  const trackName = (t: NonNullable<Track>, i: number) => [t.label || `Track ${i + 1}`, t.language && t.language !== t.label ? `(${t.language})` : ''].filter(Boolean).join(' ');
+
+  const shown = show && !locked;
+  const btn = (icon: React.ComponentProps<typeof Feather>['name'], on: () => void, size = 22, active = false) => (
+    <Pressable onPress={() => { on(); poke(); }} hitSlop={8} style={{ padding: 8 }}><Feather name={icon} size={size} color={active ? '#0A84FF' : '#fff'} /></Pressable>
+  );
+  const sheetRows: { key: string; label: string; on: boolean; pick: () => void }[] =
+    sheet === 'speed' ? SPEEDS.map((r) => ({ key: String(r), label: `${r}x`, on: r === speed, pick: () => { setRate(r); setSheet(null); } }))
+    : sheet === 'sleep' ? SLEEP.map((m) => ({ key: String(m), label: m ? `${m} minutes` : 'Off', on: m === sleepLeft || (!m && !sleepLeft), pick: () => { setSleepLeft(m); setSheet(null); if (m) flash('moon', `Sleep in ${m} min`); } }))
+    : sheet === 'audio' ? audioTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === audioSel, pick: () => pickAudio(t.id) }))
+    : sheet === 'subs' ? [{ key: 'off', label: 'Off', on: !subSel, pick: () => pickSub(null) }, ...subTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === subSel, pick: () => pickSub(t.id) }))]
+    : [];
+
+  if (!item) return null;
+  return (
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
+      <RNStatusBar hidden />
+      <VideoView ref={viewRef} player={player} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} contentFit={fit} nativeControls={false} allowsPictureInPicture startsPictureInPictureAutomatically />
+      {isAudio ? <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}><Feather name="music" size={96} color="#3A3A3C" /></View> : null}
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} {...pan.panHandlers} />
+
+      {hud ? (
+        <View pointerEvents="none" style={{ position: 'absolute', top: height * 0.38, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 16, paddingHorizontal: 20, paddingVertical: 12, alignItems: 'center', gap: 4 }}>
+          <Feather name={hud.icon} size={28} color="#fff" /><Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{hud.text}</Text>
+        </View>
+      ) : null}
+      {error ? <View pointerEvents="none" style={{ position: 'absolute', top: height * 0.45, left: 24, right: 24 }}><Text style={{ color: '#fff', textAlign: 'center' }}>{error}</Text></View> : null}
+
+      {locked ? (
+        <Pressable onPress={() => { setLocked(false); poke(); }} style={{ position: 'absolute', top: 40, right: 20, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 22, padding: 12 }}><Feather name="lock" size={20} color="#fff" /></Pressable>
+      ) : null}
+
+      {shown ? (
+        <>
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: 32, paddingHorizontal: 8, paddingBottom: 18, backgroundColor: 'rgba(0,0,0,0.55)', flexDirection: 'row', alignItems: 'center' }}>
+            {btn('chevron-down', onClose, 28)}
+            <View style={{ flex: 1 }}><Text numberOfLines={1} style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{item.name}</Text>{queue.length > 1 ? <Text style={{ color: '#ccc', fontSize: 12 }}>{index + 1} / {queue.length}</Text> : null}</View>
+            {btn('lock', () => setLocked(true))}
+            {btn('rotate-cw', () => void rotate())}
+          </View>
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', paddingBottom: 18, paddingHorizontal: 12, paddingTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 12, width: 52, textAlign: 'center' }}>{clock(scrub ?? pos)}</Text>
+              <Slider style={{ flex: 1, height: 36 }} minimumValue={0} maximumValue={Math.max(dur, 1)} value={scrub ?? pos} minimumTrackTintColor="#0A84FF" maximumTrackTintColor="rgba(255,255,255,0.3)" thumbTintColor="#fff"
+                onSlidingStart={() => { if (hideTimer.current) clearTimeout(hideTimer.current); }} onValueChange={(v) => setScrub(v)} onSlidingComplete={(v) => { seekTo(v); setScrub(null); poke(); }} />
+              <Text style={{ color: '#fff', fontSize: 12, width: 52, textAlign: 'center' }}>-{clock(Math.max(0, dur - pos))}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              {btn('skip-back', () => go(-1), 24)}
+              {btn('rotate-ccw', () => skip(-10), 24)}
+              <Pressable onPress={() => { toggle(); poke(); }} style={{ padding: 10 }}><Feather name={playing ? 'pause' : 'play'} size={38} color="#fff" /></Pressable>
+              {btn('rotate-cw', () => skip(10), 24)}
+              {btn('skip-forward', () => go(1), 24)}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', marginTop: 4 }}>
+              <Pressable onPress={() => { setSheet('speed'); poke(); }} style={{ padding: 8 }}><Text style={{ color: speed === 1 ? '#fff' : '#0A84FF', fontWeight: '600' }}>{speed}x</Text></Pressable>
+              {btn('headphones', () => setSheet('audio'), 20, audioTracks.length > 1)}
+              {btn('type', () => setSheet('subs'), 20, !!subSel)}
+              {btn('maximize', () => { const n = FITS[(FITS.indexOf(fit) + 1) % FITS.length] ?? 'contain'; setFit(n); flash('maximize', FIT_LABEL[n]); }, 20, fit !== 'contain')}
+              {btn('repeat', () => { player.loop = !loop; setLoop(!loop); flash('repeat', !loop ? 'Repeat on' : 'Repeat off'); }, 20, loop)}
+              {btn('moon', () => setSheet('sleep'), 20, sleepLeft > 0)}
+              {btn('copy', () => { void viewRef.current?.startPictureInPicture(); }, 20)}
+            </View>
+          </View>
+        </>
+      ) : null}
+
+      <Modal visible={sheet !== null} transparent animationType="fade" onRequestClose={() => setSheet(null)}>
+        <Pressable onPress={() => setSheet(null)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <View style={{ width: Math.min(width, 460), maxHeight: height * 0.8, backgroundColor: '#1C1C1E', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingVertical: 8 }}>
+            <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 8, fontWeight: '600' }}>{sheet === 'speed' ? 'Playback speed' : sheet === 'audio' ? 'Audio track' : sheet === 'subs' ? 'Subtitles' : 'Sleep timer'}</Text>
+            {sheetRows.length === 0 ? <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 20 }}>No tracks in this file</Text> : null}
+            {sheetRows.map((r) => (
+              <Pressable key={r.key} onPress={r.pick} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 14 }}>
+                <Text style={{ color: r.on ? '#0A84FF' : '#fff', fontSize: 16 }}>{r.label}</Text>{r.on ? <Feather name="check" size={18} color="#0A84FF" /> : null}
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}

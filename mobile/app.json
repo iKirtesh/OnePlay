@@ -10,15 +10,42 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "me.oneplay.mobile",
-      "infoPlist": { "UIBackgroundModes": ["audio"], "ITSAppUsesNonExemptEncryption": false }
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "me.oneplay.mobile",
-      "adaptiveIcon": { "foregroundImage": "./assets/icon.png", "backgroundColor": "#0A84FF" }
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0A84FF"
+      }
     },
     "plugins": [
-      ["expo-video", { "supportsBackgroundPlayback": true, "supportsPictureInPicture": true }],
-      "expo-document-picker"
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": true,
+          "supportsPictureInPicture": true
+        }
+      ],
+      "expo-document-picker",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "OnePlay needs access to find videos and music on this device.",
+          "savePhotosPermission": false,
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": [
+            "audio",
+            "video"
+          ]
+        }
+      ],
+      "expo-screen-orientation"
     ]
   }
 }
