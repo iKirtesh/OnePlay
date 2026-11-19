@@ -8,13 +8,15 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { clock } from './theme';
 import type { Item } from './scan';
+import * as DocumentPicker from 'expo-document-picker';
 import { getResume, saveResume } from './storage';
+import { Cue, cueAt, findSibling, readSubs } from './subs';
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
 const SLEEP = [0, 15, 30, 45, 60, 90];
 const FITS = ['contain', 'cover', 'fill'] as const;
 const FIT_LABEL = { contain: 'Fit', cover: 'Fill screen', fill: 'Stretch' } as const;
-type Sheet = null | 'speed' | 'audio' | 'subs' | 'sleep';
+type Sheet = null | 'speed' | 'audio' | 'subs' | 'sleep' | 'more';
 type Track = { id: string; label: string; language: string } | null;
 
 export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; index: number; onClose: () => void }) {
@@ -38,12 +40,17 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
   const [hud, setHud] = useState<{ icon: React.ComponentProps<typeof Feather>['name']; text: string } | null>(null);
   const [sleepLeft, setSleepLeft] = useState(0);
   const [error, setError] = useState('');
+  const [cues, setCues] = useState<Cue[]>([]);
+  const [subDelay, setSubDelay] = useState(0);
+  const [subSize, setSubSize] = useState(18);
+  const [ab, setAb] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   const viewRef = useRef<VideoView>(null);
   const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const player = useVideoPlayer(null, (p) => { p.timeUpdateEventInterval = 0.25; p.showNowPlayingNotification = true; p.staysActiveInBackground = true; });
   const live = useRef({ index, queue, loop, pos: 0, dur: 0 });
   live.current = { index, queue, loop, pos, dur };
+  const abRef = useRef(ab); abRef.current = ab;
   const isAudio = item?.kind === 'audio';
 
   const flash = useCallback((icon: NonNullable<typeof hud>['icon'], text: string) => {
@@ -61,7 +68,8 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
   useEffect(() => {
     if (!item) return;
     let alive = true;
-    setError(''); setPos(0); setDur(item.duration); setAudioTracks([]); setSubTracks([]); setAudioSel(null); setSubSel(null);
+    setError(''); setPos(0); setDur(item.duration); setAudioTracks([]); setSubTracks([]); setAudioSel(null); setSubSel(null); setCues([]); setSubDelay(0); setAb({ a: null, b: null });
+    void findSibling(item.uri).then((c) => { if (alive && c) setCues(c); });
     void (async () => {
       try {
         await player.replaceAsync({ uri: item.uri, metadata: { title: item.name } });
@@ -86,7 +94,7 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
     };
     const subs = [
       player.addListener('playingChange', (e) => setPlaying(e.isPlaying)),
-      player.addListener('timeUpdate', (e) => setPos(e.currentTime)),
+      player.addListener('timeUpdate', (e) => { setPos(e.currentTime); const x = abRef.current; if (x.a != null && x.b != null && e.currentTime >= x.b) player.currentTime = x.a; }),
       player.addListener('sourceLoad', (e) => { setDur(e.duration); readTracks(); }),
       player.addListener('availableAudioTracksChange', readTracks),
       player.addListener('availableSubtitleTracksChange', readTracks),
@@ -150,6 +158,20 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [width, height]);
 
+  const loadSubFile = async () => {
+    setSheet(null);
+    const r = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+    if (r.canceled || !r.assets[0]) return;
+    try { const c = await readSubs(r.assets[0].uri); if (!c.length) throw new Error('empty'); setCues(c); setSubSel(null); flash('type', `${c.length} lines loaded`); }
+    catch { flash('alert-circle', 'Not a valid .srt/.vtt'); }
+  };
+  const step = (d: number) => { player.pause(); seekTo(live.current.pos + d * 0.042); };
+  const markAb = () => {
+    const t = live.current.pos;
+    if (ab.a == null) { setAb({ a: t, b: null }); flash('repeat', `A ${clock(t)}`); }
+    else if (ab.b == null && t > ab.a) { setAb({ a: ab.a, b: t }); flash('repeat', `A-B ${clock(ab.a)} - ${clock(t)}`); }
+    else { setAb({ a: null, b: null }); flash('repeat', 'A-B off'); }
+  };
   const rotate = async () => {
     const o = await ScreenOrientation.getOrientationAsync();
     const portrait = o === ScreenOrientation.Orientation.PORTRAIT_UP || o === ScreenOrientation.Orientation.PORTRAIT_DOWN;
@@ -167,7 +189,16 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
     sheet === 'speed' ? SPEEDS.map((r) => ({ key: String(r), label: `${r}x`, on: r === speed, pick: () => { setRate(r); setSheet(null); } }))
     : sheet === 'sleep' ? SLEEP.map((m) => ({ key: String(m), label: m ? `${m} minutes` : 'Off', on: m === sleepLeft || (!m && !sleepLeft), pick: () => { setSleepLeft(m); setSheet(null); if (m) flash('moon', `Sleep in ${m} min`); } }))
     : sheet === 'audio' ? audioTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === audioSel, pick: () => pickAudio(t.id) }))
-    : sheet === 'subs' ? [{ key: 'off', label: 'Off', on: !subSel, pick: () => pickSub(null) }, ...subTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === subSel, pick: () => pickSub(t.id) }))]
+    : sheet === 'more' ? [
+        { key: 'ab', label: ab.a == null ? 'A-B repeat: set start' : ab.b == null ? 'A-B repeat: set end' : 'A-B repeat: clear', on: ab.a != null, pick: () => { markAb(); setSheet(null); } },
+        { key: 'fb', label: 'Previous frame', on: false, pick: () => step(-1) },
+        { key: 'ff', label: 'Next frame', on: false, pick: () => step(1) },
+        { key: 'd-', label: `Subtitle delay -0.5s (${subDelay.toFixed(1)}s)`, on: false, pick: () => setSubDelay((d) => d - 0.5) },
+        { key: 'd+', label: `Subtitle delay +0.5s (${subDelay.toFixed(1)}s)`, on: false, pick: () => setSubDelay((d) => d + 0.5) },
+        { key: 's-', label: 'Subtitle text smaller', on: false, pick: () => setSubSize((z) => Math.max(10, z - 2)) },
+        { key: 's+', label: 'Subtitle text larger', on: false, pick: () => setSubSize((z) => Math.min(40, z + 2)) },
+      ]
+    : sheet === 'subs' ? [{ key: 'off', label: 'Off', on: !subSel && cues.length === 0, pick: () => { pickSub(null); setCues([]); } }, { key: 'file', label: 'Load subtitle file (.srt / .vtt)…', on: cues.length > 0, pick: () => void loadSubFile() }, ...subTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === subSel, pick: () => pickSub(t.id) }))]
     : [];
 
   if (!item) return null;
@@ -178,6 +209,7 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
       {isAudio ? <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}><Feather name="music" size={96} color="#3A3A3C" /></View> : null}
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} {...pan.panHandlers} />
 
+      {cues.length ? (() => { const c = cueAt(cues, pos - subDelay); return c ? <View pointerEvents="none" style={{ position: 'absolute', left: 24, right: 24, bottom: shown ? 120 : 36, alignItems: 'center' }}><Text style={{ color: '#fff', fontSize: subSize, textAlign: 'center', fontWeight: '600', textShadowColor: '#000', textShadowRadius: 4, textShadowOffset: { width: 0, height: 1 }, backgroundColor: 'rgba(0,0,0,0.35)' }}>{c.text}</Text></View> : null; })() : null}
       {hud ? (
         <View pointerEvents="none" style={{ position: 'absolute', top: height * 0.38, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 16, paddingHorizontal: 20, paddingVertical: 12, alignItems: 'center', gap: 4 }}>
           <Feather name={hud.icon} size={28} color="#fff" /><Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{hud.text}</Text>
@@ -219,6 +251,7 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
               {btn('repeat', () => { player.loop = !loop; setLoop(!loop); flash('repeat', !loop ? 'Repeat on' : 'Repeat off'); }, 20, loop)}
               {btn('moon', () => setSheet('sleep'), 20, sleepLeft > 0)}
               {btn('copy', () => { void viewRef.current?.startPictureInPicture(); }, 20)}
+              {btn('more-horizontal', () => setSheet('more'), 22, ab.a != null)}
             </View>
           </View>
         </>
@@ -227,7 +260,7 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
       <Modal visible={sheet !== null} transparent animationType="fade" onRequestClose={() => setSheet(null)}>
         <Pressable onPress={() => setSheet(null)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', alignItems: 'center' }}>
           <View style={{ width: Math.min(width, 460), maxHeight: height * 0.8, backgroundColor: '#1C1C1E', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingVertical: 8 }}>
-            <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 8, fontWeight: '600' }}>{sheet === 'speed' ? 'Playback speed' : sheet === 'audio' ? 'Audio track' : sheet === 'subs' ? 'Subtitles' : 'Sleep timer'}</Text>
+            <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 8, fontWeight: '600' }}>{sheet === 'speed' ? 'Playback speed' : sheet === 'audio' ? 'Audio track' : sheet === 'subs' ? 'Subtitles' : sheet === 'more' ? 'More' : 'Sleep timer'}</Text>
             {sheetRows.length === 0 ? <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 20 }}>No tracks in this file</Text> : null}
             {sheetRows.map((r) => (
               <Pressable key={r.key} onPress={r.pick} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 14 }}>

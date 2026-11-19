@@ -19,3 +19,9 @@ export function saveResume(uri: string, pos: number, dur: number) {
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => { void AsyncStorage.setItem(KEY, JSON.stringify(cache)).catch(() => {}); }, 800);
 }
+
+/** Small helpers for favorites, hidden folders, sort choice and stream history. */
+export async function getJSON<T>(key: string, fallback: T): Promise<T> {
+  try { const v = await AsyncStorage.getItem(key); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
+}
+export function setJSON(key: string, value: unknown) { void AsyncStorage.setItem(key, JSON.stringify(value)).catch(() => {}); }
