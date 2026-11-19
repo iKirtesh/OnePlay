@@ -32,7 +32,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned builds; see README for first-launch notes
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned unless the signing secrets below are set
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
       - name: List installers
         shell: bash
         run: ls -lh release
