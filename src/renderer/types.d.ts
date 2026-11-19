@@ -15,6 +15,14 @@ declare global {
       seek: (seconds: number) => Promise<boolean>;
       setVolume: (volume: number) => Promise<boolean>;
       setVideoBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
+      addSubtitle: () => Promise<boolean>;
+      cycleSub: () => Promise<boolean>;
+      cycleAudio: () => Promise<boolean>;
+      frameStep: (back: boolean) => Promise<boolean>;
+      abLoop: () => Promise<boolean>;
+      setChapter: (n: number) => Promise<boolean>;
+      screenshot: () => Promise<string>;
+      toggleOnTop: () => Promise<boolean>;
       stop: () => Promise<boolean>;
       onStatus: (callback: (status: any) => void) => () => void;
     };

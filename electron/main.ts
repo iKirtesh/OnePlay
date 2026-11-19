@@ -52,6 +52,9 @@ function connectMpv(attempt = 0) {
     sendMpv(["observe_property", 6, "eof-reached"]);
     sendMpv(["observe_property", 7, "mute"]);
     sendMpv(["observe_property", 8, "speed"]);
+    sendMpv(["observe_property", 9, "chapter-list"]);
+    sendMpv(["observe_property", 10, "track-list"]);
+    sendMpv(["observe_property", 11, "chapter"]);
   });
   client.on("data", chunk => {
     buffer += chunk.toString();
@@ -220,6 +223,31 @@ app.whenReady().then(() => {
   ipcMain.handle("player:set-speed", (_e, speed: number) => { sendMpv(["set_property", "speed", Math.max(0.25, Math.min(4, Number(speed) || 1))]); return true; });
   ipcMain.handle("player:set-loop", (_e, loop: boolean) => { sendMpv(["set_property", "loop-file", loop ? "inf" : "no"]); return true; });
   ipcMain.handle("window:toggle-fullscreen", () => { windowRef?.setFullScreen(!windowRef.isFullScreen()); return true; });
+  ipcMain.handle("player:add-subtitle", async () => {
+    if (!windowRef) return false;
+    const r = await dialog.showOpenDialog(windowRef, { properties: ["openFile"], filters: [{ name: "Subtitles", extensions: ["srt", "ass", "ssa", "vtt", "sub"] }] });
+    if (r.canceled || !r.filePaths[0]) return false;
+    sendMpv(["sub-add", r.filePaths[0], "select"]);
+    return true;
+  });
+  ipcMain.handle("player:cycle-sub", () => { sendMpv(["cycle", "sub"]); return true; });
+  ipcMain.handle("player:cycle-audio", () => { sendMpv(["cycle", "audio"]); return true; });
+  ipcMain.handle("player:frame-step", (_e, back: boolean) => { sendMpv([back ? "frame-back-step" : "frame-step"]); return true; });
+  ipcMain.handle("player:ab-loop", () => { sendMpv(["ab-loop"]); return true; });
+  ipcMain.handle("player:set-chapter", (_e, n: number) => { sendMpv(["set_property", "chapter", Math.max(0, Math.floor(Number(n) || 0))]); return true; });
+  ipcMain.handle("player:screenshot", () => {
+    const file = path.join(app.getPath("pictures"), `OnePlay-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
+    sendMpv(["screenshot-to-file", file, "video"]);
+    sendStatus({ event: "info", message: `Screenshot saved to Pictures` });
+    return file;
+  });
+  ipcMain.handle("window:toggle-on-top", () => {
+    if (!windowRef) return false;
+    const on = !windowRef.isAlwaysOnTop();
+    windowRef.setAlwaysOnTop(on, "floating");
+    if (on && !windowRef.isFullScreen()) windowRef.setSize(420, 560);
+    return on;
+  });
   ipcMain.handle("player:stop", () => { sendMpv(["stop"]); return true; });
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

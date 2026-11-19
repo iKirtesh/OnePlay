@@ -19,6 +19,14 @@ contextBridge.exposeInMainWorld("oneplay", {
   setVolume: (volume: number) => ipcRenderer.invoke("player:set-volume", volume),
   setVideoBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
     ipcRenderer.invoke("player:set-video-bounds", bounds),
+  addSubtitle: () => ipcRenderer.invoke("player:add-subtitle"),
+  cycleSub: () => ipcRenderer.invoke("player:cycle-sub"),
+  cycleAudio: () => ipcRenderer.invoke("player:cycle-audio"),
+  frameStep: (back: boolean) => ipcRenderer.invoke("player:frame-step", back),
+  abLoop: () => ipcRenderer.invoke("player:ab-loop"),
+  setChapter: (n: number) => ipcRenderer.invoke("player:set-chapter", n),
+  screenshot: () => ipcRenderer.invoke("player:screenshot"),
+  toggleOnTop: () => ipcRenderer.invoke("window:toggle-on-top"),
   stop: () => ipcRenderer.invoke("player:stop"),
   onStatus: (callback: (status: any) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: any) => callback(status);
