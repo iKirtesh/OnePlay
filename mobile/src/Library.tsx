@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import { clock, useTheme } from './theme';
-import { Folder, Item, Library as Lib, hasAccess, requestAccess, scanLibrary, Access } from './scan';
+import { Folder, Item, Library as Lib, hasAccess, loadCached, requestAccess, scanLibrary, Access } from './scan';
 import { Thumb } from './Thumb';
 import { getJSON, getResume, loadResume, setJSON } from './storage';
 import { checkUpdate } from './update';
@@ -54,9 +54,11 @@ export function LibraryScreen({ onPlay }: { onPlay: (p: Play) => void }) {
     setBusy(true);
     try {
       await loadResume();
+      const cached = await loadCached();
+      if (cached) { setLib(cached); setAccess('granted'); }
       if (!(await hasAccess())) { const a = await requestAccess(); setAccess(a); if (a !== 'granted') return; }
       setAccess('granted');
-      const l = await scanLibrary();
+      const l = await scanLibrary((part) => setLib((cur) => (cur && cur.items.length > part.items.length ? cur : part)));
       setLib(l);
       setFolder((f) => (f ? l.folders.find((x) => x.id === f.id) ?? null : null));
     } finally { setBusy(false); bump((n) => n + 1); }
