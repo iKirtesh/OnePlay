@@ -14,7 +14,12 @@
         "UIBackgroundModes": [
           "audio"
         ],
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoadsInMedia": true
+        },
+        "NSLocalNetworkUsageDescription": "OnePlay connects to OnePlay on your computer to stream your videos over Wi-Fi."
       }
     },
     "android": {
@@ -63,7 +68,8 @@
                 "**/libc++_shared.so"
               ]
             },
-            "minSdkVersion": 26
+            "minSdkVersion": 26,
+            "usesCleartextTraffic": true
           }
         }
       ]

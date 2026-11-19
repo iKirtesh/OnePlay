@@ -29,6 +29,7 @@ A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 | **Subtitles and tracks** | Load `.srt` / `.ass` / `.vtt`, switch subtitle and audio tracks, chapter picker |
 | **Precision tools** | Speed 0.5x to 2x, A-B repeat, frame stepping, screenshots to your Pictures folder |
 | **Mini player** | Keep the window on top of everything else |
+| **Wi-Fi sharing** | Share folders with your phone on the same network, with synced resume points |
 
 **Shortcuts**
 
@@ -47,6 +48,7 @@ A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 - **VLC-style player gestures:** swipe to seek, swipe the left side for brightness and the right side for volume, double-tap to skip 10 s.
 - **Controls:** speed 0.25x to 3x, audio tracks, subtitles (including external `.srt` / `.vtt`), aspect modes, A-B repeat, frame step, sleep timer, screen lock, auto-rotate, picture-in-picture and background audio.
 - **Library tools:** search, favorites, sort, hide folders, continue-watching row and resume positions.
+- **My computer:** browse and stream the folders you share from desktop OnePlay over Wi-Fi, and continue where you left off on the other device.
 - **Network streams:** paste an `https://` link (including `.m3u8`).
 - **VLC engine fallback** for files the native player can't open (MKV with DTS, HEVC and similar).
 - **In-app update notice** when a newer build is released.
@@ -109,6 +111,14 @@ npx expo prebuild
 npx expo run:android      # or run:ios on a Mac
 ```
 
+## Wi-Fi sharing
+
+1. On the computer, click the Wi-Fi button in OnePlay, turn sharing on and add your video folders.
+2. On the phone, tap the monitor icon, then enter the address and the 6-digit pairing code shown on the computer.
+3. Browse and play. Where you stop is synced both ways by file name.
+
+Only devices on private home-network addresses are served, each needs the pairing token, and wrong codes are rate-limited. Traffic is plain HTTP on your local network, so use it on networks you trust. Firewalls may ask to allow OnePlay the first time (port 8765).
+
 ## How it works
 
 ```
@@ -133,7 +143,8 @@ Push to `main` and CI does the rest.
 - [ ] Code-signed Windows and macOS installers
 - [ ] Bundle mpv so nothing needs installing first
 - [ ] Embedded video on macOS and Wayland through libmpv
-- [ ] Resume and favorites synced between phone and desktop over your local network
+- [x] Browse, stream and resume sync between phone and desktop over your local network (favorites sync still to do)
+- [ ] Use the phone as a remote control for the desktop player
 - [ ] Network streams and playlists on desktop
 - [ ] Cast to TV and an audio equalizer on mobile
 - [ ] Automated tests and accessibility pass

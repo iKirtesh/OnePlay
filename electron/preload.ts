@@ -27,6 +27,19 @@ contextBridge.exposeInMainWorld("oneplay", {
   setChapter: (n: number) => ipcRenderer.invoke("player:set-chapter", n),
   screenshot: () => ipcRenderer.invoke("player:screenshot"),
   toggleOnTop: () => ipcRenderer.invoke("window:toggle-on-top"),
+  shareState: () => ipcRenderer.invoke("share:state"),
+  shareToggle: (on: boolean) => ipcRenderer.invoke("share:toggle", on),
+  shareAddFolder: () => ipcRenderer.invoke("share:add-folder"),
+  shareRemoveFolder: (dir: string) => ipcRenderer.invoke("share:remove-folder", dir),
+  shareNewCode: () => ipcRenderer.invoke("share:new-code"),
+  shareForget: () => ipcRenderer.invoke("share:forget"),
+  shareResume: (key: string, pos: number, dur: number) => ipcRenderer.invoke("share:put-resume", key, pos, dur),
+  getShareResume: (key: string) => ipcRenderer.invoke("share:get-resume", key),
+  onShareState: (cb: (s: any) => void) => {
+    const l = (_e: Electron.IpcRendererEvent, s: any) => cb(s);
+    ipcRenderer.on("share:state", l);
+    return () => ipcRenderer.removeListener("share:state", l);
+  },
   stop: () => ipcRenderer.invoke("player:stop"),
   onStatus: (callback: (status: any) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: any) => callback(status);

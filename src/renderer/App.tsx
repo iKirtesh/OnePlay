@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { SharePanel } from "./Share";
+import { Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 
 type Media = { path: string; name: string };
 type Tab = "queue" | "recent";
@@ -8,7 +9,8 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const RECENT_KEY = "oneplay.recent";
 const RESUME_KEY = "oneplay.resume";
 const readResume = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem(RESUME_KEY) || "{}"); } catch { return {}; } };
-const writeResume = (path: string, pos: number, dur: number) => { try { const r = readResume(); if (dur > 0 && (pos < 5 || pos > dur - 10)) delete r[path]; else r[path] = pos; localStorage.setItem(RESUME_KEY, JSON.stringify(r)); } catch { /* storage unavailable */ } };
+const shareKey = (path: string) => (path.split(/[\\/]/).pop() || path).replace(/\.[^.]+$/, "");
+const writeResume = (path: string, pos: number, dur: number) => { const done = dur > 0 && (pos < 5 || pos > dur - 10); void window.oneplay.shareResume(shareKey(path), done ? 0 : pos, dur); try { const r = readResume(); if (dur > 0 && (pos < 5 || pos > dur - 10)) delete r[path]; else r[path] = pos; localStorage.setItem(RESUME_KEY, JSON.stringify(r)); } catch { /* storage unavailable */ } };
 
 const toMedia = (path: string): Media => ({ path, name: (path.split(/[\\/]/).pop() || path).replace(/\.[^.]+$/, "") });
 const clock = (n: number) => {
@@ -39,6 +41,7 @@ export default function App() {
   const [chapters, setChapters] = useState<{ title?: string; time: number }[]>([]);
   const [chapter, setChapter] = useState(-1);
   const [onTop, setOnTop] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const pendingResume = useRef(0);
   const lastSave = useRef(0);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -71,6 +74,7 @@ export default function App() {
     if (!item) return;
     if (live.current.index >= 0) { const c = live.current.queue[live.current.index]; if (c) writeResume(c.path, live.current.position, live.current.duration); }
     pendingResume.current = readResume()[item.path] ?? 0;
+    try { const r = await window.oneplay.getShareResume(shareKey(item.path)); if (r) pendingResume.current = r.pos; } catch { /* sharing unavailable */ }
     setChapters([]); setChapter(-1);
     setQueue(list); setIndex(i); setError(""); setInfo(""); setPosition(0);
     setRecent((prev) => {
@@ -202,6 +206,7 @@ export default function App() {
         <header className="titlebar">
           <div className="title-text">{current ? current.name : "OnePlay"}</div>
           <div className="title-actions">
+            <button className="icon-button" title="Wi-Fi sharing and phone sync" onClick={() => setShareOpen(true)}><Wifi size={16} /></button>
             <button className="icon-button" title="Load subtitles" onClick={() => window.oneplay.addSubtitle()}><Captions size={17} /></button>
             <button className="icon-button" title="Cycle subtitles (S)" onClick={() => window.oneplay.cycleSub()}><Layers size={16} /></button>
             <button className="icon-button" title="Cycle audio track (A)" onClick={() => window.oneplay.cycleAudio()}><Languages size={16} /></button>
@@ -261,6 +266,7 @@ export default function App() {
           </section>
         </div>
       </section>
+      {shareOpen && <SharePanel onClose={() => setShareOpen(false)} />}
       {dragging && <div className="drop-overlay"><div>Drop to play</div></div>}
     </main>
   );

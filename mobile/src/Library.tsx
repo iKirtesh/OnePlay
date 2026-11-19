@@ -14,7 +14,7 @@ type Sort = 'newest' | 'name' | 'longest';
 const SORTS: Sort[] = ['newest', 'name', 'longest'];
 export type Play = { queue: Item[]; index: number };
 
-export function LibraryScreen({ onPlay }: { onPlay: (p: Play) => void }) {
+export function LibraryScreen({ onPlay, onPc }: { onPlay: (p: Play) => void; onPc?: () => void }) {
   const t = useTheme();
   const [lib, setLib] = useState<Lib | null>(null);
   const [access, setAccess] = useState<Access | 'unknown'>('unknown');
@@ -169,6 +169,7 @@ export function LibraryScreen({ onPlay }: { onPlay: (p: Play) => void }) {
         <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: folder ? 20 : 30, fontWeight: '700' }}>{folder ? folder.name : 'OnePlay'}</Text>
         <Pressable onPress={nextSort} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Feather name="sliders" size={18} color={t.accent} /><Text style={{ color: t.accent, fontSize: 12 }}>{sort}</Text></Pressable>
         {!folder && hidden.length ? <Pressable onPress={() => setShowHidden((v) => !v)} hitSlop={10}><Feather name={showHidden ? 'eye' : 'eye-off'} size={20} color={t.accent} /></Pressable> : null}
+        {onPc ? <Pressable onPress={onPc} hitSlop={10}><Feather name="monitor" size={22} color={t.accent} /></Pressable> : null}
         <Pressable onPress={() => setUrlOpen(true)} hitSlop={10}><Feather name="link" size={22} color={t.accent} /></Pressable>
         <Pressable onPress={pick} hitSlop={10}><Feather name="plus-circle" size={24} color={t.accent} /></Pressable>
       </View>

@@ -10,6 +10,7 @@ import { clock } from './theme';
 import type { Item } from './scan';
 import * as DocumentPicker from 'expo-document-picker';
 import { getResume, saveResume } from './storage';
+import { pushResume, remoteResume } from './remote';
 import { Cue, cueAt, findSibling, readSubs } from './subs';
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
@@ -50,6 +51,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: I
   const player = useVideoPlayer(null, (p) => { p.timeUpdateEventInterval = 0.25; p.showNowPlayingNotification = true; p.staysActiveInBackground = true; });
   const live = useRef({ index, queue, loop, pos: 0, dur: 0 });
   live.current = { index, queue, loop, pos, dur };
+  const lastPush = useRef(0);
   const abRef = useRef(ab); abRef.current = ab;
   const isAudio = item?.kind === 'audio';
 
@@ -77,11 +79,15 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: I
         player.loop = live.current.loop;
         player.playbackRate = speed;
         const r = getResume(item.uri);
-        if (r && r.pos > 5) player.currentTime = r.pos;
+        let startAt = r?.pos ?? 0;
+        const rem = await remoteResume(item.name);
+        if (rem && rem.at > (r?.at ?? 0)) startAt = rem.pos;
+        if (!alive) return;
+        if (startAt > 5) player.currentTime = startAt;
         player.play();
       } catch (e) { if (alive) setError(String((e as Error)?.message ?? 'Cannot play this file')); }
     })();
-    return () => { alive = false; saveResume(item.uri, live.current.pos, live.current.dur); };
+    return () => { alive = false; saveResume(item.uri, live.current.pos, live.current.dur); pushResume(item.name, live.current.pos, live.current.dur); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.uri]);
 
@@ -94,7 +100,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: I
     };
     const subs = [
       player.addListener('playingChange', (e) => setPlaying(e.isPlaying)),
-      player.addListener('timeUpdate', (e) => { setPos(e.currentTime); const x = abRef.current; if (x.a != null && x.b != null && e.currentTime >= x.b) player.currentTime = x.a; }),
+      player.addListener('timeUpdate', (e) => { setPos(e.currentTime); if (Date.now() - lastPush.current > 20000 && e.currentTime > 5) { lastPush.current = Date.now(); const c = live.current.queue[live.current.index]; if (c) pushResume(c.name, e.currentTime, live.current.dur); } const x = abRef.current; if (x.a != null && x.b != null && e.currentTime >= x.b) player.currentTime = x.a; }),
       player.addListener('sourceLoad', (e) => { setDur(e.duration); readTracks(); }),
       player.addListener('availableAudioTracksChange', readTracks),
       player.addListener('availableSubtitleTracksChange', readTracks),

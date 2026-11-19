@@ -4,6 +4,7 @@ import net from "node:net";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import * as share from "./share";
 
 let windowRef: BrowserWindow | null = null;
 let videoHost: BrowserWindow | null = null;
@@ -248,6 +249,20 @@ app.whenReady().then(() => {
     if (on && !windowRef.isFullScreen()) windowRef.setSize(420, 560);
     return on;
   });
+  share.initShare(() => windowRef?.webContents.send("share:state", share.shareState()));
+  ipcMain.handle("share:state", () => share.shareState());
+  ipcMain.handle("share:toggle", async (_e, on: boolean) => { if (on) await share.startShare(); else share.stopShare(); return share.shareState(); });
+  ipcMain.handle("share:add-folder", async () => {
+    if (!windowRef) return share.shareState();
+    const r = await dialog.showOpenDialog(windowRef, { properties: ["openDirectory", "multiSelections"] });
+    if (!r.canceled) r.filePaths.forEach(share.addFolder);
+    return share.shareState();
+  });
+  ipcMain.handle("share:remove-folder", (_e, dir: string) => { share.removeFolder(String(dir)); return share.shareState(); });
+  ipcMain.handle("share:new-code", () => { share.regenerateCode(); return share.shareState(); });
+  ipcMain.handle("share:forget", () => { share.forgetDevices(); return share.shareState(); });
+  ipcMain.handle("share:put-resume", (_e, key: string, pos: number, dur: number) => { share.putResume(String(key).toLowerCase(), Number(pos) || 0, Number(dur) || 0); return true; });
+  ipcMain.handle("share:get-resume", (_e, key: string) => share.getResume(String(key).toLowerCase()) ?? null);
   ipcMain.handle("player:stop", () => { sendMpv(["stop"]); return true; });
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

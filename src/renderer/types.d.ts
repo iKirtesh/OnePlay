@@ -1,5 +1,6 @@
 export {};
 declare global {
+  type ShareState = { enabled: boolean; port: number; addresses: string[]; code: string; folders: string[]; devices: number };
   interface Window {
     oneplay: {
       platform: string;
@@ -23,6 +24,15 @@ declare global {
       setChapter: (n: number) => Promise<boolean>;
       screenshot: () => Promise<string>;
       toggleOnTop: () => Promise<boolean>;
+      shareState: () => Promise<ShareState>;
+      shareToggle: (on: boolean) => Promise<ShareState>;
+      shareAddFolder: () => Promise<ShareState>;
+      shareRemoveFolder: (dir: string) => Promise<ShareState>;
+      shareNewCode: () => Promise<ShareState>;
+      shareForget: () => Promise<ShareState>;
+      shareResume: (key: string, pos: number, dur: number) => Promise<boolean>;
+      getShareResume: (key: string) => Promise<{ pos: number; dur: number; at: number } | null>;
+      onShareState: (cb: (s: ShareState) => void) => () => void;
       stop: () => Promise<boolean>;
       onStatus: (callback: (status: any) => void) => () => void;
     };
