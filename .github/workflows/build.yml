@@ -29,6 +29,24 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm install --no-audit --no-fund
+      - name: Bundle mpv (Windows)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        continue-on-error: true
+        env: { GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
+        run: |
+          New-Item -ItemType Directory -Force vendor/mpv | Out-Null
+          $rel = Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:GH_TOKEN" } https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest
+          $a = $rel.assets | Where-Object { $_.name -match '^mpv-x86_64-\d{8}-git-.*\.7z$' } | Select-Object -First 1
+          if (-not $a) { throw "No mpv Windows build found in $($rel.tag_name)" }
+          Invoke-WebRequest $a.browser_download_url -OutFile mpv.7z
+          7z x mpv.7z -ovendor/mpv -y | Out-Null
+          if (-not (Test-Path vendor/mpv/mpv.exe)) { throw "mpv.exe missing after extract" }
+          Get-ChildItem vendor/mpv | Format-Table Name, Length
+      - name: Ensure vendor folder exists
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force vendor/mpv | Out-Null
       - run: npm run typecheck
       - run: npm run build
         env:

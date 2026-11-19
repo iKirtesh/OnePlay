@@ -147,12 +147,17 @@ function startMpv() {
     });
   }
   // Apps launched from Finder/the desktop do not inherit the shell PATH, so add the usual mpv install locations.
+  const home = os.homedir();
   const extra = process.platform === "darwin" ? ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
-    : process.platform === "linux" ? ["/usr/local/bin", "/usr/bin", "/snap/bin", "/var/lib/flatpak/exports/bin"] : [];
+    : process.platform === "linux" ? ["/usr/local/bin", "/usr/bin", "/snap/bin", "/var/lib/flatpak/exports/bin"]
+    : [path.join(process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"), "Microsoft", "WinGet", "Links"), path.join(home, "scoop", "shims"), path.join(process.env.ProgramFiles ?? "C:\\Program Files", "mpv"), "C:\\ProgramData\\chocolatey\\bin"];
+  // Use the mpv shipped inside the installer when there is one, otherwise whatever is installed on the system.
+  const bundled = path.join(process.resourcesPath, "mpv", process.platform === "win32" ? "mpv.exe" : "mpv");
+  const mpvCommand = app.isPackaged && fs.existsSync(bundled) ? bundled : "mpv";
   const env = { ...process.env, PATH: [process.env.PATH, ...extra].filter(Boolean).join(path.delimiter) };
-  mpv = spawn("mpv", args, { stdio: "ignore", windowsHide: true, env });
+  mpv = spawn(mpvCommand, args, { stdio: "ignore", windowsHide: true, env });
   mpv.on("error", () => {
-    sendStatus({ event: "error", message: "mpv was not found. Install mpv and make sure it is available on PATH." });
+    sendStatus({ event: "error", message: process.platform === "win32" ? "mpv was not found. Run \"winget install mpv\" in a terminal, then restart OnePlay." : process.platform === "darwin" ? "mpv was not found. Run \"brew install mpv\", then restart OnePlay." : "mpv was not found. Run \"sudo apt install mpv\", then restart OnePlay." });
   });
   mpv.on("exit", () => { mpv = null; socket?.destroy(); socket = null; });
   connectMpv();
