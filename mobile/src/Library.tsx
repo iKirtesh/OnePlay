@@ -109,7 +109,7 @@ export function LibraryScreen({ onPlay }: { onPlay: (p: Play) => void }) {
     const files = (lib?.items ?? []).filter((i) => !needle || i.name.toLowerCase().includes(needle));
     const rows: Row[] = [{ t: 'h', title: 'FOLDERS' }, ...folders.map((f) => ({ t: 'f' as const, f })), { t: 'h', title: 'ALL FILES' }, ...files.map((i) => ({ t: 'i' as const, i }))];
     body = (
-      <FlatList data={rows} keyExtractor={(r, n) => (r.t === 'f' ? 'f' + r.f.id : r.t === 'i' ? 'i' + r.i.id : 'h' + n)} ListHeaderComponent={!needle && recent.length ? header : null} refreshControl={<RefreshControl refreshing={busy} onRefresh={refresh} tintColor={t.accent} />}
+      <FlatList data={rows} keyExtractor={(r, n) => (r.t === 'f' ? 'f' + r.f.id : r.t === 'i' ? 'i' + r.i.id : 'h' + n)} ListHeaderComponent={!needle && recent.length ? header : undefined} refreshControl={<RefreshControl refreshing={busy} onRefresh={refresh} tintColor={t.accent} />}
         initialNumToRender={14} windowSize={7}
         renderItem={({ item: r }) => r.t === 'h' ? <Text style={{ color: t.text2, fontSize: 13, fontWeight: '600', padding: 16, paddingBottom: 6 }}>{r.title}</Text> : r.t === 'i' ? row(r.i, files) : (
           <Pressable onPress={() => { setFolder(r.f); setQ(''); }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 14 }}>
