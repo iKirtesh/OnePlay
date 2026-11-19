@@ -19,7 +19,7 @@ const FIT_LABEL = { contain: 'Fit', cover: 'Fill screen', fill: 'Stretch' } as c
 type Sheet = null | 'speed' | 'audio' | 'subs' | 'sleep' | 'more';
 type Track = { id: string; label: string; language: string } | null;
 
-export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; index: number; onClose: () => void }) {
+export function PlayerScreen({ queue, index: start, onClose, onVlc }: { queue: Item[]; index: number; onClose: () => void; onVlc?: (i: Item) => void }) {
   const { width, height } = useWindowDimensions();
   const [index, setIndex] = useState(start);
   const item = queue[index];
@@ -190,6 +190,7 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
     : sheet === 'sleep' ? SLEEP.map((m) => ({ key: String(m), label: m ? `${m} minutes` : 'Off', on: m === sleepLeft || (!m && !sleepLeft), pick: () => { setSleepLeft(m); setSheet(null); if (m) flash('moon', `Sleep in ${m} min`); } }))
     : sheet === 'audio' ? audioTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === audioSel, pick: () => pickAudio(t.id) }))
     : sheet === 'more' ? [
+        ...(onVlc && item ? [{ key: 'vlc', label: 'Play with VLC engine (more formats)', on: false, pick: () => { player.pause(); onVlc(item); } }] : []),
         { key: 'ab', label: ab.a == null ? 'A-B repeat: set start' : ab.b == null ? 'A-B repeat: set end' : 'A-B repeat: clear', on: ab.a != null, pick: () => { markAb(); setSheet(null); } },
         { key: 'fb', label: 'Previous frame', on: false, pick: () => step(-1) },
         { key: 'ff', label: 'Next frame', on: false, pick: () => step(1) },
@@ -215,7 +216,7 @@ export function PlayerScreen({ queue, index: start, onClose }: { queue: Item[]; 
           <Feather name={hud.icon} size={28} color="#fff" /><Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{hud.text}</Text>
         </View>
       ) : null}
-      {error ? <View pointerEvents="none" style={{ position: 'absolute', top: height * 0.45, left: 24, right: 24 }}><Text style={{ color: '#fff', textAlign: 'center' }}>{error}</Text></View> : null}
+      {error ? <View style={{ position: 'absolute', top: height * 0.42, left: 24, right: 24, alignItems: 'center', gap: 12 }}><Text style={{ color: '#fff', textAlign: 'center' }}>{error}</Text>{onVlc && item ? <Pressable onPress={() => onVlc(item)} style={{ backgroundColor: '#0A84FF', borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 }}><Text style={{ color: '#fff', fontWeight: '600' }}>Try VLC engine</Text></Pressable> : null}</View> : null}
 
       {locked ? (
         <Pressable onPress={() => { setLocked(false); poke(); }} style={{ position: 'absolute', top: 40, right: 20, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 22, padding: 12 }}><Feather name="lock" size={20} color="#fff" /></Pressable>
