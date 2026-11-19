@@ -1,86 +1,143 @@
+<div align="center">
+
+<img src="build/icon.png" width="112" alt="OnePlay logo" />
+
 # OnePlay
 
-OnePlay is a free, cross-platform desktop media-player project for Windows, Linux, and macOS. It uses an Apple-inspired dark desktop interface, Electron + React + TypeScript for the application shell, and mpv as the playback engine. mpv uses FFmpeg libraries for media demuxing and decoding.
+**One player for every screen.**<br/>
+A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 
-> **Development status: early prototype.** The project now includes a native mpv video-host integration path for Windows and Linux/X11. This has been committed but still requires native OS testing before it can be considered stable.
+[![Build](https://github.com/iKirtesh/OnePlay/actions/workflows/build.yml/badge.svg)](https://github.com/iKirtesh/OnePlay/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/iKirtesh/OnePlay?label=desktop&color=0A84FF)](https://github.com/iKirtesh/OnePlay/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 
-## Current implementation
+[**Download**](#download) · [Features](#features) · [Mobile](#mobile) · [Build from source](#build-from-source) · [Roadmap](#roadmap)
 
-- Electron desktop window with context isolation and a restricted preload bridge
-- React + TypeScript interface
-- Open local audio/video files
-- Basic play/pause, seek, and volume commands through mpv JSON IPC
-- Embedded mpv video surface using a native child window on Windows and Linux/X11
-- Video-host bounds follow the OnePlay player stage when the app window resizes
-- macOS and Linux/Wayland currently use a separate mpv video window fallback
-- Windows, Linux, and macOS packaging targets
-- GitHub Actions matrix workflow for native platform builds
+</div>
 
-## Requirements
+---
 
-- Node.js 22+
-- npm
-- mpv installed and available on `PATH`
-- Windows 10/11, a supported Linux desktop, or macOS
+## Features
 
-FFmpeg is used by mpv for decoding. This development build expects an mpv executable installed on the host; it does not yet bundle mpv or its codec libraries.
+### Desktop (Windows · macOS · Ubuntu)
+
+| | |
+| --- | --- |
+| **Plays everything** | MP4, MKV, AVI, MOV, WebM, MP3, FLAC and more, powered by mpv and FFmpeg |
+| **Apple-style interface** | Clean light and dark themes that follow your system |
+| **Queue and history** | Drag and drop files, auto-advance, recent files, resume where you stopped |
+| **Subtitles and tracks** | Load `.srt` / `.ass` / `.vtt`, switch subtitle and audio tracks, chapter picker |
+| **Precision tools** | Speed 0.5x to 2x, A-B repeat, frame stepping, screenshots to your Pictures folder |
+| **Mini player** | Keep the window on top of everything else |
+
+**Shortcuts**
+
+| Key | Action | Key | Action |
+| --- | --- | --- | --- |
+| `Space` / `K` | Play / pause | `S` | Cycle subtitles |
+| `←` `→` | Seek 5 s (`Shift` = 30 s) | `A` | Cycle audio track |
+| `↑` `↓` | Volume | `B` | A-B repeat |
+| `M` | Mute | `.` `,` | Next / previous frame |
+| `F` | Fullscreen | `C` | Screenshot |
+| `N` / `P` | Next / previous | `L` | Repeat |
+
+### Mobile (Android · iPhone)
+
+- **Scans your whole device** for videos and music and groups them by folder, with all files listed below. The last scan is cached, so the library opens instantly.
+- **VLC-style player gestures:** swipe to seek, swipe the left side for brightness and the right side for volume, double-tap to skip 10 s.
+- **Controls:** speed 0.25x to 3x, audio tracks, subtitles (including external `.srt` / `.vtt`), aspect modes, A-B repeat, frame step, sleep timer, screen lock, auto-rotate, picture-in-picture and background audio.
+- **Library tools:** search, favorites, sort, hide folders, continue-watching row and resume positions.
+- **Network streams:** paste an `https://` link (including `.m3u8`).
+- **VLC engine fallback** for files the native player can't open (MKV with DTS, HEVC and similar).
+- **In-app update notice** when a newer build is released.
 
 ## Download
 
-Get the latest installers from the [Releases page](https://github.com/iKirtesh/OnePlay/releases/latest):
+Get the latest builds from the **[Releases page](https://github.com/iKirtesh/OnePlay/releases)**.
 
-| System | File |
-| --- | --- |
-| Windows 10/11 | `OnePlay-<version>-win-x64-setup.exe` (installer) or the portable `.exe` |
-| macOS (Apple Silicon + Intel) | `OnePlay-<version>-mac-universal.dmg` |
-| Ubuntu / Debian | `OnePlay-<version>-linux-amd64.deb` (`sudo apt install ./OnePlay-*.deb`, also installs mpv) or the `.AppImage` |
+| System | File | Notes |
+| --- | --- | --- |
+| **Windows 10/11** | `OnePlay-<version>-win-x64-setup.exe` or the portable `.exe` | See [signing](#unsigned-builds) |
+| **macOS** (Apple Silicon + Intel) | `OnePlay-<version>-mac-universal.dmg` | See [signing](#unsigned-builds) |
+| **Ubuntu / Debian** | `OnePlay-<version>-linux-amd64.deb` or `.AppImage` | `sudo apt install ./OnePlay-*.deb` also installs mpv |
+| **Android 8+** | `OnePlay-Mobile-android.apk` | Installs over the previous version |
+| **iPhone / iPad** | `OnePlay-Mobile-ios-unsigned.ipa` | Sideload with AltStore or Sideloadly |
 
-**Install mpv first** (OnePlay does not bundle it yet): Windows `winget install mpv` or `scoop install mpv`; macOS `brew install mpv`; Ubuntu `sudo apt install mpv`.
+> **Install mpv first** on desktop (OnePlay does not bundle it yet):
+> Windows `winget install mpv` · macOS `brew install mpv` · Ubuntu `sudo apt install mpv`
 
-**First launch (builds are unsigned):** on macOS right-click the app and choose Open (or run `xattr -cr /Applications/OnePlay.app`); on Windows choose *More info > Run anyway* in SmartScreen; AppImage needs `chmod +x`.
+### Unsigned builds
 
-Shortcuts: Space/K play-pause, arrows seek and volume (Shift = 30 s), M mute, F fullscreen, N/P next/previous, L repeat. You can also drag files onto the window.
+OnePlay is not code-signed yet, so your system may warn about it:
 
-## Mobile (Android + iPhone)
+| System | What you see | What to do |
+| --- | --- | --- |
+| **Windows** | SmartScreen warning | Choose *More info → Run anyway* |
+| **Windows with Smart App Control on** | The app is blocked outright | Run from source (below), or wait for a signed build |
+| **macOS** | "Cannot be opened" | Right-click the app and choose *Open*, or run `xattr -cr /Applications/OnePlay.app` |
+| **Linux** | Nothing | AppImage needs `chmod +x` |
 
-A separate phone app lives in [`mobile/`](mobile) (Expo + React Native, native video player). Builds appear on the Releases page as `mobile-<n>`: an Android `.apk` and an **unsigned** iOS `.ipa` that must be sideloaded with AltStore or Sideloadly (free Apple ID apps expire after 7 days). Untested on physical devices.
+The release workflow signs Windows and macOS builds automatically once signing secrets are added (see [Releasing](#releasing)).
 
-## Run locally
+## Mobile
+
+The phone app lives in [`mobile/`](mobile) and is built with Expo and React Native. It uses the native system player and can hand a file to a VLC engine when needed.
+
+- iOS can only read the Photos library, so folder browsing there is limited.
+- Android library scanning covers media that Android has indexed. Folders containing a `.nomedia` file aren't included.
+- The iOS build is unsigned; free Apple IDs let sideloaded apps run for 7 days.
+- Not yet tested on physical devices. Please report issues.
+
+## Build from source
+
+Requirements: Node.js 22+, npm, and [mpv](https://mpv.io) on your `PATH`.
 
 ```bash
+git clone https://github.com/iKirtesh/OnePlay.git
+cd OnePlay
 npm install
-npm run dev
+npm run dev          # desktop app with hot reload
+npm run build        # installers into release/
 ```
 
-For a distributable build:
+Mobile:
 
 ```bash
-npm run build
+cd mobile
+npm install --legacy-peer-deps
+npx expo prebuild
+npx expo run:android      # or run:ios on a Mac
 ```
 
-Artifacts are written to `release/`. Build each OS on its native GitHub Actions runner; macOS signing and notarization require Apple credentials for public distribution.
+## How it works
 
-## Video embedding details
+```
+ React + TypeScript UI ──► Electron main process ──► mpv  (JSON IPC, local socket)
+                                    │                    └─ FFmpeg decoders
+                                    └─ native child window for video (Windows, Linux/X11)
+```
 
-On Windows, OnePlay creates a native child host window and passes its HWND to mpv using `--wid`. On Linux/X11, it passes the X11 window ID. The renderer reports the video-stage rectangle to Electron so the native host can track the player layout.
+- **Windows and Linux/X11:** mpv draws into a native child window that follows the player area. Linux/Wayland and macOS use a separate mpv window for now, because macOS needs libmpv's in-process render API for true embedding.
+- The mpv control socket is local-only and unauthenticated. Never expose it on a network.
 
-mpv documents `--wid` as a native-window embedding mechanism for Win32 and X11. Linux Wayland does not provide the same foreign-window parenting model, so this prototype deliberately falls back to a separate mpv window there.
+## Releasing
 
-On macOS, mpv's Cocoa `wid` expects an in-process `NSView*`; passing a foreign-process window handle to the mpv CLI is not supported. A proper embedded macOS implementation needs libmpv's in-process render API and a native Metal/OpenGL view. OnePlay currently uses the separate-window fallback on macOS rather than pretending embedding is complete.
+Push to `main` and CI does the rest.
 
-The mpv IPC endpoint is local-only. Do not expose it over a network: the protocol is intentionally unauthenticated and can execute commands.
+- **Desktop:** bump `version` in `package.json`. CI builds Windows, macOS and Linux and publishes `v<version>`.
+- **Mobile:** every push to `main` that changes `mobile/` publishes a `mobile-<n>` release with the APK and IPA.
+- **Signing (optional):** add repository secrets `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` for Windows, and `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` for macOS.
 
 ## Roadmap
 
-0. Cut a release: bump `version` in package.json and push to main; CI builds Windows, macOS and Linux installers and publishes them to a GitHub Release `v<version>`.
-1. Validate and harden native video embedding on Windows and Linux/X11.
-2. Implement in-process libmpv rendering for macOS and evaluate a Wayland-native path.
-3. Bundle or reliably locate mpv per platform and provide first-run diagnostics.
-4. Add media library scanning, playlists, resume position, and history using SQLite.
-5. Add subtitles, audio/subtitle track selection, playback speed, keyboard shortcuts, and fullscreen.
-6. Add hardware-acceleration controls, network streams, and robust error reporting.
-7. Add automated tests, accessibility, signed installers, and release automation.
+- [ ] Code-signed Windows and macOS installers
+- [ ] Bundle mpv so nothing needs installing first
+- [ ] Embedded video on macOS and Wayland through libmpv
+- [ ] Resume and favorites synced between phone and desktop over your local network
+- [ ] Network streams and playlists on desktop
+- [ ] Cast to TV and an audio equalizer on mobile
+- [ ] Automated tests and accessibility pass
 
-## Licensing
+## License
 
-OnePlay's own source code is MIT-licensed. mpv and FFmpeg are separate third-party projects with their own licenses and build configurations. Before bundling or redistributing their binaries, include the applicable license texts and notices and review the exact FFmpeg build's LGPL/GPL configuration. Do not assume that the MIT license for OnePlay covers those dependencies.
+OnePlay's own source is MIT-licensed. mpv, FFmpeg and VLC are separate projects with their own licenses; review them before bundling or redistributing their binaries.
