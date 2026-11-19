@@ -55,9 +55,89 @@ jobs:
             release/*.AppImage
             release/*.deb
 
+  android:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_BUILD: '${{ github.run_number }}'
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-cleanup: on-success
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - name: Bump versionCode
+        run: |
+          node -e "
+          const fs=require('fs');const c=JSON.parse(fs.readFileSync('app.json','utf8'));
+          c.expo.android.versionCode=1000+Number(process.env.GITHUB_RUN_NUMBER);
+          fs.writeFileSync('app.json',JSON.stringify(c,null,2))"
+      - run: npx expo prebuild --platform android --no-install
+        env:
+          CI: '1'
+      - name: Build release APK (arm64)
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk OnePlay-Mobile-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oneplay-android
+          path: mobile/OnePlay-Mobile-android.apk
+          if-no-files-found: error
+
+  ios:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-latest
+    env:
+      EXPO_PUBLIC_BUILD: '${{ github.run_number }}'
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
+      - run: npx expo prebuild --platform ios
+        env:
+          CI: '1'
+      - name: Build unsigned release app
+        working-directory: mobile/ios
+        run: |
+          WS=$(ls -d *.xcworkspace | head -1); SCHEME="${WS%.xcworkspace}"
+          xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" | tail -n 40
+      - name: Package unsigned IPA
+        run: |
+          APP=$(ls -d ios/build/Build/Products/Release-iphoneos/*.app | head -1)
+          mkdir -p Payload && cp -R "$APP" Payload/
+          zip -qry OnePlay-Mobile-ios-unsigned.ipa Payload
+          ls -lh *.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oneplay-ios
+          path: mobile/OnePlay-Mobile-ios-unsigned.ipa
+          if-no-files-found: error
+
   release:
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: [build, android, ios]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,20 +145,22 @@ jobs:
         run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
-          path: installers
+          path: files
           merge-multiple: true
-      - run: ls -lh installers
+      - run: ls -lh files
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.v }}
           name: OnePlay ${{ steps.ver.outputs.v }}
           target_commitish: ${{ github.sha }}
-          files: installers/*
+          files: files/*
           generate_release_notes: true
           body: |
             ## Downloads
             - **Windows:** `OnePlay-*-win-x64.exe` (installer) or the portable `.exe`
             - **macOS (Apple Silicon and Intel):** `OnePlay-*-mac-universal.dmg`
             - **Ubuntu / Linux:** `OnePlay-*-linux-x86_64.AppImage` or the `.deb` (`sudo apt install ./OnePlay-*.deb` also installs mpv)
+            - **Android:** `OnePlay-Mobile-android.apk`
+            - **iPhone/iPad:** `OnePlay-Mobile-ios-unsigned.ipa` (unsigned; install with AltStore or Sideloadly)
 
             OnePlay plays media with **mpv**. Install it first on Windows and macOS (see the README). These builds are unsigned; see the README for the first-launch steps.
