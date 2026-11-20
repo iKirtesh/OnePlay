@@ -3,7 +3,7 @@ import { SharePanel } from "./Share";
 import { AddToPlaylist, FavButton, ListsPane } from "./Lists";
 import { SubsPanel } from "./SubsPanel";
 import { AUDIO_EXT, Media, remember, shuffled } from "./lib";
-import { Heart, ListPlus, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { Heart, ListPlus, MonitorPlay, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 
 type Tab = "queue" | "recent" | "favs" | "lists";
 const MEDIA_EXT = /\.(mp4|mkv|avi|mov|webm|m4v|mp3|flac|wav|aac|ogg|opus|m4a|wmv|ts)$/i;
@@ -44,6 +44,8 @@ export default function App() {
   const [chapter, setChapter] = useState(-1);
   const [onTop, setOnTop] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [embed, setEmbed] = useState<{ embed: boolean; supported: boolean }>({ embed: true, supported: false });
+  useEffect(() => { void window.oneplay.getEmbed().then(setEmbed); }, []);
   const [lists, setLists] = useState<Lists>({ fav: {}, playlists: {} });
   const [subsOpen, setSubsOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -300,6 +302,7 @@ export default function App() {
             {current && <FavButton lists={lists} media={current} />}
             {current && <button className="icon-button" title="Add to playlist" onClick={() => setAddOpen(true)}><ListPlus size={16} /></button>}
             {current && !AUDIO_EXT.test(current.path) && <button className="icon-button" title="Find subtitles" onClick={() => setSubsOpen(true)}><Search size={16} /></button>}
+            {embed.supported && <button className={`icon-button ${embed.embed ? "active" : ""}`} title={embed.embed ? "Video is inside this window. Click to use a separate video window (restarts OnePlay)." : "Video opens in its own window. Click to try showing it inside this window (restarts OnePlay)."} onClick={() => { if (window.confirm(embed.embed ? "Play video in its own window? OnePlay will restart." : "Show video inside this window (experimental)? OnePlay will restart.")) void window.oneplay.setEmbed(!embed.embed); }}><MonitorPlay size={16} /></button>}
             <button className="icon-button" title="Wi-Fi sharing and phone sync" onClick={() => setShareOpen(true)}><Wifi size={16} /></button>
             <button className="icon-button" title="Load subtitles" onClick={() => window.oneplay.addSubtitle()}><Captions size={17} /></button>
             <button className="icon-button" title="Cycle subtitles (S)" onClick={() => window.oneplay.cycleSub()}><Layers size={16} /></button>
@@ -328,6 +331,9 @@ export default function App() {
                 <div className="music-title">{meta.title || current.name}</div>
                 <div className="music-sub">{[meta.artist, meta.album].filter(Boolean).join(" · ")}</div>
               </div>
+            )}
+            {!embed.embed && current && !AUDIO_EXT.test(current.path) && (
+              <div className="own-window-hint"><b>Video is playing in its own window</b><span>Look for the "OnePlay" video window on your screen. Use this window for the queue, playlists and phone sharing.</span></div>
             )}
             {info && <div className="stage-notice">{info}</div>}
           </div>

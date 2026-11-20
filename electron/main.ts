@@ -17,11 +17,18 @@ let ipcEndpoint = "";
 let relativeBounds = { x: 0, y: 0, width: 640, height: 360 };
 const pendingCommands: unknown[][] = [];
 
-function canEmbedNativeWindow() {
-  if (process.platform === "win32") return true;
+const prefsFile = () => path.join(app.getPath("userData"), "prefs.json");
+function readPrefs(): { embedVideo?: boolean } { try { return JSON.parse(fs.readFileSync(prefsFile(), "utf8")); } catch { return {}; } }
+/** Whether this system can draw video inside the app window at all. */
+function embedSupported() {
   if (process.platform === "linux") return process.env.XDG_SESSION_TYPE !== "wayland";
-  // mpv --wid with a Cocoa NSView is supported by libmpv, not the mpv CLI process.
-  return false;
+  // macOS: mpv --wid with a Cocoa NSView is supported by libmpv, not the mpv CLI process.
+  return process.platform === "win32";
+}
+// Embedding draws video into a child window that the app's own surface can cover on some Windows setups,
+// so video opens in its own mpv window unless embedding is switched on.
+function canEmbedNativeWindow() {
+  return embedSupported() && (readPrefs().embedVideo ?? process.platform === "linux");
 }
 
 function endpoint() {
@@ -135,18 +142,17 @@ function startMpv() {
   const args = [
     "--idle=yes", "--force-window=yes", "--keep-open=yes",
     `--input-ipc-server=${ipcEndpoint}`, "--terminal=no",
-    "--msg-level=all=warn", "--keepaspect-window=no",
-    "--no-border", "--ontop=no"
+    "--msg-level=all=warn", "--ontop=no"
   ];
+  if (canEmbedNativeWindow()) args.push("--keepaspect-window=no", "--no-border");
+  else args.push("--autofit=60%", "--autofit-larger=92%x92%", "--title=OnePlay - ${media-title}");
   if (canEmbedNativeWindow()) {
     const host = createVideoHost();
     if (host) args.push(`--wid=${nativeWindowId(host)}`);
   } else {
     sendStatus({
       event: "info",
-      message: process.platform === "darwin"
-        ? "macOS currently uses a separate mpv video window. In-process libmpv rendering is required for true embedding."
-        : "Wayland does not support mpv's native window embedding here. Playback opens in a separate mpv window."
+      message: "Video plays in its own window."
     });
   }
   // Apps launched from Finder/the desktop do not inherit the shell PATH, so add the usual mpv install locations.
@@ -272,6 +278,13 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("update:check", () => extras.checkUpdate());
   ipcMain.handle("update:open", (_e, url: string) => { extras.openRelease(String(url)); return true; });
+  ipcMain.handle("app:get-embed", () => ({ embed: canEmbedNativeWindow(), supported: embedSupported() }));
+  ipcMain.handle("app:set-embed", (_e, on: boolean) => {
+    if (!embedSupported()) return false;
+    try { fs.writeFileSync(prefsFile(), JSON.stringify({ ...readPrefs(), embedVideo: !!on })); } catch { return false; }
+    app.relaunch(); app.exit(0);
+    return true;
+  });
   ipcMain.handle("share:state", () => share.shareState());
   ipcMain.handle("share:toggle", async (_e, on: boolean) => { if (on) await share.startShare(); else share.stopShare(); return share.shareState(); });
   ipcMain.handle("share:add-folder", async () => {

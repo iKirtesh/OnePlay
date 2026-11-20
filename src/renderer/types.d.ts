@@ -33,6 +33,8 @@ declare global {
       subsDownload: (id: number, video: string, lang: string) => Promise<{ path: string; remaining?: number }>;
       checkUpdate: () => Promise<{ version: string; url: string } | null>;
       openUpdate: (url: string) => Promise<boolean>;
+      getEmbed: () => Promise<{ embed: boolean; supported: boolean }>;
+      setEmbed: (on: boolean) => Promise<boolean>;
       shareStatus: (st: unknown) => Promise<boolean>;
       listsGet: () => Promise<Lists>;
       listsPut: (l: Partial<Lists>) => Promise<Lists>;

@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld("oneplay", {
   subsDownload: (id: number, video: string, lang: string) => ipcRenderer.invoke("subs:download", id, video, lang),
   checkUpdate: () => ipcRenderer.invoke("update:check"),
   openUpdate: (url: string) => ipcRenderer.invoke("update:open", url),
+  getEmbed: () => ipcRenderer.invoke("app:get-embed"),
+  setEmbed: (on: boolean) => ipcRenderer.invoke("app:set-embed", on),
   shareStatus: (st: unknown) => ipcRenderer.invoke("share:status", st),
   listsGet: () => ipcRenderer.invoke("share:lists-get"),
   listsPut: (l: unknown) => ipcRenderer.invoke("share:lists-put", l),

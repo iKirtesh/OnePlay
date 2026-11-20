@@ -135,7 +135,8 @@ Only devices on private home-network addresses are served, each needs the pairin
                                     └─ native child window for video (Windows, Linux/X11)
 ```
 
-- **Windows and Linux/X11:** mpv draws into a native child window that follows the player area. Linux/Wayland and macOS use a separate mpv window for now, because macOS needs libmpv's in-process render API for true embedding.
+- **Video window:** on Windows and macOS the video opens in its own mpv window by default. Windows and Linux/X11 can instead draw it inside the app window (the monitor button in the title bar, experimental); on Windows that child window can end up hidden behind the app's own surface on some setups.
+- **Linux/X11 embedding:** mpv draws into a native child window that follows the player area. Linux/Wayland and macOS use a separate mpv window for now, because macOS needs libmpv's in-process render API for true embedding.
 - The mpv control socket is local-only and unauthenticated. Never expose it on a network.
 
 ## Releasing
