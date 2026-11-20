@@ -14,6 +14,14 @@ import { pushResume, remoteResume } from './remote';
 import { link, LiveStatus } from './link';
 import { Cue, cueAt, findSibling, readSubs } from './subs';
 
+// Many sites refuse requests that do not look like a browser (HTTP 403), so web links are opened with browser-like headers.
+const BROWSER_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
+const sourceFor = (uri: string, title: string) => {
+  const web = /^https?:\/\//i.test(uri);
+  const origin = web ? /^(https?:\/\/[^/]+)/i.exec(uri)?.[1] : undefined;
+  return { uri, metadata: { title }, ...(web ? { headers: { 'User-Agent': BROWSER_UA, Accept: '*/*', ...(origin ? { Referer: `${origin}/` } : {}) } } : {}) };
+};
+const friendlyError = (m: string) => (/403/.test(m) ? 'The website refused to stream this link (403). Try the VLC engine below.' : /404/.test(m) ? 'The link was not found (404). Check the address.' : /UnknownHost|Unable to connect|timeout/i.test(m) ? 'Could not reach the server. Check your internet connection.' : m);
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
 const SLEEP = [0, 15, 30, 45, 60, 90];
 const FITS = ['contain', 'cover', 'fill'] as const;
@@ -95,7 +103,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
     void findSibling(item.uri).then((c) => { if (alive && c) setCues(c); });
     void (async () => {
       try {
-        await player.replaceAsync({ uri: item.uri, metadata: { title: item.name } });
+        await player.replaceAsync(sourceFor(item.uri, item.name));
         if (!alive) return;
         player.loop = live.current.loop;
         player.playbackRate = speed;
@@ -107,7 +115,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
         if (!syncOn && startAt > 5) player.currentTime = startAt;
         player.play();
         if (syncOn && link.last) applyRef.current(link.last);
-      } catch (e) { if (alive) setError(String((e as Error)?.message ?? 'Cannot play this file')); }
+      } catch (e) { if (alive) setError(friendlyError(String((e as Error)?.message ?? 'Cannot play this file'))); }
     })();
     return () => { alive = false; saveResume(item.uri, live.current.pos, live.current.dur); pushResume(item.name, live.current.pos, live.current.dur); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,7 +134,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
       player.addListener('sourceLoad', (e) => { setDur(e.duration); readTracks(); }),
       player.addListener('availableAudioTracksChange', readTracks),
       player.addListener('availableSubtitleTracksChange', readTracks),
-      player.addListener('statusChange', (e) => { if (e.status === 'error') setError(e.error?.message ?? 'Cannot play this file'); }),
+      player.addListener('statusChange', (e) => { if (e.status === 'error') setError(friendlyError(e.error?.message ?? 'Cannot play this file')); }),
       player.addListener('playToEnd', () => {
         const l = live.current;
         const cur = l.queue[l.index]; if (cur) saveResume(cur.uri, 0, 1);
