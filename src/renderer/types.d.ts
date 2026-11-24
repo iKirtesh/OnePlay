@@ -17,6 +17,7 @@ declare global {
       play: (filePath: string) => Promise<boolean>;
       togglePause: () => Promise<boolean>;
       seek: (seconds: number) => Promise<boolean>;
+      setEq: (bass: number, treble: number) => Promise<boolean>;
       setVolume: (volume: number) => Promise<boolean>;
       setVideoBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
       addSubtitle: () => Promise<boolean>;

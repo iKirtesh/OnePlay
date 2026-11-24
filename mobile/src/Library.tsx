@@ -7,6 +7,7 @@ import { clock, useTheme } from './theme';
 import { Folder, Item, Library as Lib, hasAccess, loadCached, requestAccess, scanLibrary, Access } from './scan';
 import { Thumb } from './Thumb';
 import { getJSON, getResume, loadResume, setJSON } from './storage';
+import { remoteResumeAll } from './remote';
 import { checkUpdate } from './update';
 import { Lists, empty, isFav, livePlaylists, loadLists, newId, savePlaylist, setFav, syncLists } from './lists';
 
@@ -97,7 +98,14 @@ export function LibraryScreen({ onPlay, onPc, onLists }: { onPlay: (p: Play) => 
     return sortItems(needle ? base.filter((i) => i.name.toLowerCase().includes(needle)) : base);
   }, [lib, folder, tab, needle, lists, sort]);
   const folders = useMemo(() => (lib ? lib.folders.filter((f) => (showHidden || !hidden.includes(f.id)) && (!needle || f.name.toLowerCase().includes(needle))) : []), [lib, needle, hidden, showHidden]);
-  const recent = useMemo(() => (lib ? lib.items.filter((i) => getResume(i.uri)).sort((a, b) => (getResume(b.uri)!.at - getResume(a.uri)!.at)).slice(0, 12) : []), [lib, busy]);
+  const [pcResume, setPcResume] = useState<Record<string, { pos: number; dur: number; at: number }>>({});
+  useEffect(() => { if (lib) void remoteResumeAll().then(setPcResume); }, [lib]);
+  // Half-watched videos from this phone and from the computer, newest first.
+  const recent = useMemo(() => {
+    if (!lib) return [];
+    const stamp = (i: Item) => Math.max(getResume(i.uri)?.at ?? 0, pcResume[i.name.toLowerCase()]?.pos ? pcResume[i.name.toLowerCase()]!.at : 0);
+    return lib.items.filter((i) => getResume(i.uri) || (pcResume[i.name.toLowerCase()]?.pos ?? 0) > 5).sort((a, b) => stamp(b) - stamp(a)).slice(0, 12);
+  }, [lib, busy, pcResume]);
 
   const row = (item: Item, queue: Item[]) => {
     const r = getResume(item.uri);

@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("oneplay", {
   play: (filePath: string) => ipcRenderer.invoke("player:play", filePath),
   togglePause: () => ipcRenderer.invoke("player:toggle-pause"),
   seek: (seconds: number) => ipcRenderer.invoke("player:seek", seconds),
+  setEq: (bass: number, treble: number) => ipcRenderer.invoke("player:set-eq", bass, treble),
   setVolume: (volume: number) => ipcRenderer.invoke("player:set-volume", volume),
   setVideoBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
     ipcRenderer.invoke("player:set-video-bounds", bounds),

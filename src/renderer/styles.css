@@ -155,3 +155,6 @@ input[type=range]:hover::-webkit-slider-thumb, input[type=range]:focus-visible::
 .share-folder { display: flex; justify-content: space-between; align-items: center; gap: 10px; text-align: left; padding: 8px 10px; border-radius: 8px; border: 0; background: rgba(255,255,255,.06); color: inherit; cursor: pointer; }
 .share-folder:hover { background: rgba(255,255,255,.12); }
 .share-folder span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.eq-pop { position: absolute; bottom: 44px; right: 0; width: 220px; padding: 12px; display: flex; flex-direction: column; gap: 10px; border-radius: 12px; background: rgba(40,40,44,.97); box-shadow: 0 8px 28px rgba(0,0,0,.45); z-index: 30; font-size: 13px; }
+.eq-pop label { display: flex; flex-direction: column; gap: 4px; }
+.eq-pop label b { float: right; font-weight: 500; opacity: .75; }

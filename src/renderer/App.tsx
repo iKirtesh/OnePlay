@@ -4,7 +4,7 @@ import { PhonePanel } from "./PhonePanel";
 import { AddToPlaylist, FavButton, ListsPane } from "./Lists";
 import { SubsPanel } from "./SubsPanel";
 import { AUDIO_EXT, Media, remember, shuffled } from "./lib";
-import { Cpu, Smartphone, Heart, ListPlus, MonitorPlay, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { SlidersHorizontal, Cpu, Smartphone, Heart, ListPlus, MonitorPlay, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 
 type Tab = "queue" | "recent" | "favs" | "lists";
 const MEDIA_EXT = /\.(mp4|mkv|avi|mov|webm|m4v|mp3|flac|wav|aac|ogg|opus|m4a|wmv|ts)$/i;
@@ -51,6 +51,9 @@ export default function App() {
   useEffect(() => { void window.oneplay.phoneState().then(setPhone); return window.oneplay.onPhone(setPhone); }, []);
   const [embed, setEmbed] = useState<{ embed: boolean; supported: boolean }>({ embed: true, supported: false });
   useEffect(() => { void window.oneplay.getEmbed().then(setEmbed); }, []);
+  const [eq, setEq] = useState<{ bass: number; treble: number }>(() => { try { return JSON.parse(localStorage.getItem("oneplay.eq") ?? "") as { bass: number; treble: number }; } catch { return { bass: 0, treble: 0 }; } });
+  const [eqOpen, setEqOpen] = useState(false);
+  useEffect(() => { void window.oneplay.setEq(eq.bass, eq.treble); try { localStorage.setItem("oneplay.eq", JSON.stringify(eq)); } catch { /* storage unavailable */ } }, [eq]);
   const [swdec, setSwdec] = useState(false);
   useEffect(() => { void window.oneplay.getSwdec().then(setSwdec); }, []);
   const [lists, setLists] = useState<Lists>({ fav: {}, playlists: {} });
@@ -236,7 +239,7 @@ export default function App() {
       if (k === " " || k === "k") { e.preventDefault(); void toggle(); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); void skip(e.shiftKey ? -30 : -5); }
       else if (e.key === "ArrowRight") { e.preventDefault(); void skip(e.shiftKey ? 30 : 5); }
-      else if (e.key === "ArrowUp") { e.preventDefault(); changeVolume(Math.min(100, volume + 5)); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); changeVolume(Math.min(150, volume + 5)); }
       else if (e.key === "ArrowDown") { e.preventDefault(); changeVolume(Math.max(0, volume - 5)); }
       else if (k === "m") { void window.oneplay.setMute(!muted); }
       else if (k === "f") { void window.oneplay.toggleFullscreen(); }
@@ -377,9 +380,18 @@ export default function App() {
                 <button className="icon-button" title="Forward 10 seconds" onClick={() => skip(10)}><RotateCw size={20} /></button>
                 <button className="icon-button" title="Next (N)" disabled={queue.length < 2} onClick={() => next(1)}><SkipForward size={20} fill="currentColor" /></button>
               </div>
-              <div className="side volume">
+              <div className="side volume" style={{ position: "relative" }}>
+                <button className={`icon-button ${eq.bass || eq.treble ? "active" : ""}`} title="Equalizer" onClick={() => setEqOpen((v) => !v)}><SlidersHorizontal size={16} /></button>
+                {eqOpen && (
+                  <div className="eq-pop" onClick={(e) => e.stopPropagation()}>
+                    <label>Bass <b>{eq.bass > 0 ? "+" : ""}{eq.bass} dB</b><input type="range" min={-12} max={12} value={eq.bass} onChange={(e) => setEq({ ...eq, bass: Number(e.target.value) })} /></label>
+                    <label>Treble <b>{eq.treble > 0 ? "+" : ""}{eq.treble} dB</b><input type="range" min={-12} max={12} value={eq.treble} onChange={(e) => setEq({ ...eq, treble: Number(e.target.value) })} /></label>
+                    <small>Volume goes up to 150% for quiet videos.</small>
+                    <button className="share-folder" onClick={() => setEq({ bass: 0, treble: 0 })}>Reset</button>
+                  </div>
+                )}
                 <button className="icon-button" aria-label={muted ? "Unmute" : "Mute"} onClick={() => window.oneplay.setMute(!muted)}>{muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
-                <input aria-label="Volume" type="range" min={0} max={100} value={muted ? 0 : volume} style={{ ["--p" as string]: `${muted ? 0 : volume}%` }} onChange={(e) => changeVolume(Number(e.target.value))} />
+                <input aria-label="Volume" type="range" min={0} max={150} value={muted ? 0 : volume} title={volume > 100 ? `Boosted to ${volume}%` : `Volume ${volume}%`} style={{ ["--p" as string]: `${muted ? 0 : volume / 1.5}%` }} onChange={(e) => changeVolume(Number(e.target.value))} />
               </div>
             </div>
           </section>

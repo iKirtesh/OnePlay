@@ -163,7 +163,7 @@ function startMpv() {
   const args = [
     "--idle=yes", "--force-window=yes", "--keep-open=yes",
     `--input-ipc-server=${ipcEndpoint}`, "--terminal=no",
-    "--msg-level=all=warn", "--ontop=no", `--hwdec=${readPrefs().swdec ? "no" : "auto-safe"}`
+    "--msg-level=all=warn", "--ontop=no", "--volume-max=150", `--hwdec=${readPrefs().swdec ? "no" : "auto-safe"}`
   ];
   if (canEmbedNativeWindow()) args.push("--keepaspect-window=no", "--no-border");
   else args.push("--autofit=60%", "--autofit-larger=92%x92%", "--title=OnePlay - ${media-title}");
@@ -252,7 +252,13 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("player:toggle-pause", () => { sendMpv(["cycle", "pause"]); return true; });
   ipcMain.handle("player:seek", (_event, seconds: number) => { sendMpv(["seek", seconds, "absolute"]); return true; });
-  ipcMain.handle("player:set-volume", (_event, volume: number) => { sendMpv(["set_property", "volume", Math.max(0, Math.min(100, volume))]); return true; });
+  ipcMain.handle("player:set-volume", (_event, volume: number) => { sendMpv(["set_property", "volume", Math.max(0, Math.min(150, volume))]); return true; });
+  ipcMain.handle("player:set-eq", (_e, bass: number, treble: number) => {
+    const g = (n: number) => Math.max(-12, Math.min(12, Math.round(Number(n) || 0)));
+    const b = g(bass), t = g(treble);
+    sendMpv(["set_property", "af", b === 0 && t === 0 ? "" : `lavfi=[bass=g=${b},treble=g=${t}]`]);
+    return true;
+  });
   ipcMain.handle("player:set-mute", (_e, muted: boolean) => { sendMpv(["set_property", "mute", Boolean(muted)]); return true; });
   ipcMain.handle("player:set-speed", (_e, speed: number) => { sendMpv(["set_property", "speed", Math.max(0.25, Math.min(4, Number(speed) || 1))]); return true; });
   ipcMain.handle("player:set-loop", (_e, loop: boolean) => { sendMpv(["set_property", "loop-file", loop ? "inf" : "no"]); return true; });

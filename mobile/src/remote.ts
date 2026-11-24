@@ -67,6 +67,11 @@ export async function remoteResume(name: string): Promise<RemoteResume | null> {
   if (!conn) return null;
   try { return (await call<Record<string, RemoteResume>>(conn.host, '/api/sync', { token: conn.token, timeout: 2500 }))[nameKey(name)] ?? null; } catch { return null; }
 }
+/** Every resume position known to the computer, keyed by lower-case name. */
+export async function remoteResumeAll(): Promise<Record<string, RemoteResume>> {
+  if (!conn) return {};
+  try { return await call<Record<string, RemoteResume>>(conn.host, '/api/sync', { token: conn.token, timeout: 3000 }); } catch { return {}; }
+}
 export function pushResume(name: string, pos: number, dur: number) {
   if (!conn) return;
   const done = dur > 0 && (pos < 5 || pos > dur - 10);
