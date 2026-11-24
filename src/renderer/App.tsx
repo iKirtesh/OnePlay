@@ -54,6 +54,8 @@ export default function App() {
   const [eq, setEq] = useState<{ bass: number; treble: number }>(() => { try { return JSON.parse(localStorage.getItem("oneplay.eq") ?? "") as { bass: number; treble: number }; } catch { return { bass: 0, treble: 0 }; } });
   const [eqOpen, setEqOpen] = useState(false);
   useEffect(() => { void window.oneplay.setEq(eq.bass, eq.treble); try { localStorage.setItem("oneplay.eq", JSON.stringify(eq)); } catch { /* storage unavailable */ } }, [eq]);
+  const [fill, setFill] = useState(true);
+  useEffect(() => { void window.oneplay.getFill().then(setFill); }, []);
   const [swdec, setSwdec] = useState(false);
   useEffect(() => { void window.oneplay.getSwdec().then(setSwdec); }, []);
   const [lists, setLists] = useState<Lists>({ fav: {}, playlists: {} });
@@ -313,6 +315,7 @@ export default function App() {
             {current && <button className="icon-button" title="Add to playlist" onClick={() => setAddOpen(true)}><ListPlus size={16} /></button>}
             {current && !AUDIO_EXT.test(current.path) && <button className="icon-button" title="Find subtitles" onClick={() => setSubsOpen(true)}><Search size={16} /></button>}
             {embed.supported && <button className={`icon-button ${embed.embed ? "active" : ""}`} title={embed.embed ? "Video is inside this window. Click to use a separate video window (restarts OnePlay)." : "Video opens in its own window. Click to try showing it inside this window (restarts OnePlay)."} onClick={() => { if (window.confirm(embed.embed ? "Play video in its own window? OnePlay will restart." : "Show video inside this window (experimental)? OnePlay will restart.")) void window.oneplay.setEmbed(!embed.embed); }}><MonitorPlay size={16} /></button>}
+            {!embed.embed && <button className={`icon-button ${fill ? "active" : ""}`} title={fill ? "Videos fill the screen; controls appear when you move the mouse. Click to use a normal window." : "Click to make videos fill the screen (controls appear on hover)."} onClick={() => { const v = !fill; setFill(v); void window.oneplay.setFill(v); }}><Maximize2 size={16} /></button>}
             <button className={`icon-button ${swdec ? "active" : ""}`} title={swdec ? "Software decoding is on (fixes a black picture). Click to use the graphics card again." : "Picture black? Click to use software decoding."} onClick={() => { const v = !swdec; setSwdec(v); void window.oneplay.setSwdec(v); }}><Cpu size={16} /></button>
             {phone?.connected && <button className="icon-button active" title="Videos on your phone" onClick={() => setPhoneOpen(true)}><Smartphone size={16} /></button>}
             <button className="icon-button" title="Wi-Fi sharing and phone sync" onClick={() => setShareOpen(true)}><Wifi size={16} /></button>
@@ -345,7 +348,7 @@ export default function App() {
               </div>
             )}
             {!embed.embed && current && !AUDIO_EXT.test(current.path) && (
-              <div className="own-window-hint"><b>Video is playing in its own window</b><span>Look for the "OnePlay" video window on your screen. Use this window for the queue, playlists and phone sharing.</span></div>
+              <div className="own-window-hint"><b>{fill ? "Video is full screen" : "Video is playing in its own window"}</b><span>{fill ? "Move the mouse over the video for controls. Press Esc or double-click to come back to this window." : "Look for the OnePlay video window on your screen. Use this window for the queue, playlists and phone sharing."}</span></div>
             )}
             {info && <div className="stage-notice">{info}</div>}
           </div>

@@ -236,6 +236,11 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
     : sheet === 'sleep' ? SLEEP.map((m) => ({ key: String(m), label: m ? `${m} minutes` : 'Off', on: m === sleepLeft || (!m && !sleepLeft), pick: () => { setSleepLeft(m); setSheet(null); if (m) flash('moon', `Sleep in ${m} min`); } }))
     : sheet === 'audio' ? audioTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === audioSel, pick: () => pickAudio(t.id) }))
     : sheet === 'more' ? [
+        ...(audioTracks.length > 1 ? [{ key: 'audio', label: 'Audio track…', on: false, pick: () => setSheet('audio') }] : []),
+        { key: 'fit', label: `Aspect: ${FIT_LABEL[fit]} (tap to change)`, on: fit !== 'contain', pick: () => { const n = FITS[(FITS.indexOf(fit) + 1) % FITS.length] ?? 'contain'; setFit(n); flash('maximize', FIT_LABEL[n]); setSheet(null); } },
+        { key: 'loop', label: loop ? 'Repeat: on' : 'Repeat: off', on: loop, pick: () => { player.loop = !loop; setLoop(!loop); flash('repeat', !loop ? 'Repeat on' : 'Repeat off'); setSheet(null); } },
+        { key: 'sleep', label: sleepLeft > 0 ? `Sleep timer: ${sleepLeft} min left` : 'Sleep timer…', on: sleepLeft > 0, pick: () => setSheet('sleep') },
+        { key: 'pip', label: 'Picture in picture', on: false, pick: () => { setSheet(null); void viewRef.current?.startPictureInPicture(); } },
         ...(onVlc && item ? [{ key: 'vlc', label: 'Play with VLC engine (more formats)', on: false, pick: () => { player.pause(); onVlc(item); } }] : []),
         { key: 'ab', label: ab.a == null ? 'A-B repeat: set start' : ab.b == null ? 'A-B repeat: set end' : 'A-B repeat: clear', on: ab.a != null, pick: () => { markAb(); setSheet(null); } },
         { key: 'fb', label: 'Previous frame', on: false, pick: () => step(-1) },
@@ -271,13 +276,12 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
 
       {shown ? (
         <>
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: 32, paddingHorizontal: 8, paddingBottom: 18, backgroundColor: 'rgba(0,0,0,0.55)', flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: 24, paddingHorizontal: 8, paddingBottom: 10, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row', alignItems: 'center' }}>
             {btn('chevron-down', onClose, 28)}
             <View style={{ flex: 1 }}><Text numberOfLines={1} style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{item.name}</Text>{syncOn ? <Text style={{ color: '#7FD1FF', fontSize: 12 }}>Watching together with your computer</Text> : queue.length > 1 ? <Text style={{ color: '#ccc', fontSize: 12 }}>{index + 1} / {queue.length}</Text> : null}</View>
             {btn('lock', () => setLocked(true))}
-            {btn('rotate-cw', () => void rotate())}
           </View>
-          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', paddingBottom: 18, paddingHorizontal: 12, paddingTop: 8 }}>
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', paddingBottom: 12, paddingHorizontal: 12, paddingTop: 4 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Text style={{ color: '#fff', fontSize: 12, width: 52, textAlign: 'center' }}>{clock(scrub ?? pos)}</Text>
               <Slider style={{ flex: 1, height: 36 }} minimumValue={0} maximumValue={Math.max(dur, 1)} value={scrub ?? pos} minimumTrackTintColor="#0A84FF" maximumTrackTintColor="rgba(255,255,255,0.3)" thumbTintColor="#fff"
@@ -285,21 +289,16 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
               <Text style={{ color: '#fff', fontSize: 12, width: 52, textAlign: 'center' }}>-{clock(Math.max(0, dur - pos))}</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              <View style={{ flex: 1, alignItems: 'flex-start' }}><Pressable onPress={() => { setSheet('speed'); poke(); }} style={{ padding: 8 }}><Text style={{ color: speed === 1 ? '#fff' : '#0A84FF', fontWeight: '600' }}>{speed}x</Text></Pressable></View>
               {btn('skip-back', () => go(-1), 24)}
               {btn('rotate-ccw', () => skip(-10), 24)}
               <Pressable onPress={() => { toggle(); poke(); }} style={{ padding: 10 }}><Feather name={playing ? 'pause' : 'play'} size={38} color="#fff" /></Pressable>
               {btn('rotate-cw', () => skip(10), 24)}
               {btn('skip-forward', () => go(1), 24)}
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', marginTop: 4 }}>
-              <Pressable onPress={() => { setSheet('speed'); poke(); }} style={{ padding: 8 }}><Text style={{ color: speed === 1 ? '#fff' : '#0A84FF', fontWeight: '600' }}>{speed}x</Text></Pressable>
-              {btn('headphones', () => setSheet('audio'), 20, audioTracks.length > 1)}
-              {btn('type', () => setSheet('subs'), 20, !!subSel)}
-              {btn('maximize', () => { const n = FITS[(FITS.indexOf(fit) + 1) % FITS.length] ?? 'contain'; setFit(n); flash('maximize', FIT_LABEL[n]); }, 20, fit !== 'contain')}
-              {btn('repeat', () => { player.loop = !loop; setLoop(!loop); flash('repeat', !loop ? 'Repeat on' : 'Repeat off'); }, 20, loop)}
-              {btn('moon', () => setSheet('sleep'), 20, sleepLeft > 0)}
-              {btn('copy', () => { void viewRef.current?.startPictureInPicture(); }, 20)}
-              {btn('more-horizontal', () => setSheet('more'), 22, ab.a != null)}
+              <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end' }}>
+                {btn('type', () => setSheet('subs'), 20, !!subSel || cues.length > 0)}
+                {btn('more-horizontal', () => setSheet('more'), 22, ab.a != null || loop || sleepLeft > 0 || fit !== 'contain' || audioTracks.length > 1)}
+              </View>
             </View>
           </View>
         </>

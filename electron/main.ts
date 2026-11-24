@@ -18,7 +18,7 @@ let relativeBounds = { x: 0, y: 0, width: 640, height: 360 };
 const pendingCommands: unknown[][] = [];
 
 const prefsFile = () => path.join(app.getPath("userData"), "prefs.json");
-function readPrefs(): { embedVideo?: boolean; swdec?: boolean } { try { return JSON.parse(fs.readFileSync(prefsFile(), "utf8")); } catch { return {}; } }
+function readPrefs(): { embedVideo?: boolean; swdec?: boolean; fill?: boolean } { try { return JSON.parse(fs.readFileSync(prefsFile(), "utf8")); } catch { return {}; } }
 /** Whether this system can draw video inside the app window at all. */
 function embedSupported() {
   if (process.platform === "linux") return process.env.XDG_SESSION_TYPE !== "wayland";
@@ -166,7 +166,7 @@ function startMpv() {
     "--msg-level=all=warn", "--ontop=no", "--volume-max=150", `--hwdec=${readPrefs().swdec ? "no" : "auto-safe"}`
   ];
   if (canEmbedNativeWindow()) args.push("--keepaspect-window=no", "--no-border");
-  else args.push("--autofit=60%", "--autofit-larger=92%x92%", "--title=OnePlay - ${media-title}");
+  else args.push("--autofit=85%", "--autofit-larger=92%x92%", "--title=OnePlay - ${media-title}", "--osc=yes", "--cursor-autohide=1500", "--osd-on-seek=bar", ...(readPrefs().fill !== false ? ["--fullscreen=yes"] : []));
   if (canEmbedNativeWindow()) {
     const host = createVideoHost();
     if (host) args.push(`--wid=${nativeWindowId(host)}`);
@@ -308,6 +308,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("update:check", () => extras.checkUpdate());
   ipcMain.handle("update:open", (_e, url: string) => { extras.openRelease(String(url)); return true; });
+  ipcMain.handle("app:get-fill", () => readPrefs().fill !== false);
+  ipcMain.handle("app:set-fill", (_e, on: boolean) => { writePrefs({ fill: !!on }); if (!canEmbedNativeWindow()) sendMpv(["set_property", "fullscreen", !!on]); return !!on; });
   ipcMain.handle("app:get-swdec", () => !!readPrefs().swdec);
   ipcMain.handle("app:set-swdec", (_e, on: boolean) => { writePrefs({ swdec: !!on }); sendMpv(["set_property", "hwdec", on ? "no" : "auto-safe"]); return !!on; });
   ipcMain.handle("app:get-embed", () => ({ embed: canEmbedNativeWindow(), supported: embedSupported() }));

@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld("oneplay", {
   subsDownload: (id: number, video: string, lang: string) => ipcRenderer.invoke("subs:download", id, video, lang),
   checkUpdate: () => ipcRenderer.invoke("update:check"),
   openUpdate: (url: string) => ipcRenderer.invoke("update:open", url),
+  getFill: () => ipcRenderer.invoke("app:get-fill"),
+  setFill: (on: boolean) => ipcRenderer.invoke("app:set-fill", on),
   getSwdec: () => ipcRenderer.invoke("app:get-swdec"),
   setSwdec: (on: boolean) => ipcRenderer.invoke("app:set-swdec", on),
   getEmbed: () => ipcRenderer.invoke("app:get-embed"),
