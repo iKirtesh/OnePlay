@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SharePanel } from "./Share";
+import { PhonePanel } from "./PhonePanel";
 import { AddToPlaylist, FavButton, ListsPane } from "./Lists";
 import { SubsPanel } from "./SubsPanel";
 import { AUDIO_EXT, Media, remember, shuffled } from "./lib";
-import { Heart, ListPlus, MonitorPlay, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { Smartphone, Heart, ListPlus, MonitorPlay, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 
 type Tab = "queue" | "recent" | "favs" | "lists";
 const MEDIA_EXT = /\.(mp4|mkv|avi|mov|webm|m4v|mp3|flac|wav|aac|ogg|opus|m4a|wmv|ts)$/i;
@@ -12,7 +13,8 @@ const RECENT_KEY = "oneplay.recent";
 const RESUME_KEY = "oneplay.resume";
 const readResume = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem(RESUME_KEY) || "{}"); } catch { return {}; } };
 const shareKey = (path: string) => (path.split(/[\\/]/).pop() || path).replace(/\.[^.]+$/, "");
-const writeResume = (path: string, pos: number, dur: number) => { const done = dur > 0 && (pos < 5 || pos > dur - 10); void window.oneplay.shareResume(shareKey(path), done ? 0 : pos, dur); try { const r = readResume(); if (dur > 0 && (pos < 5 || pos > dur - 10)) delete r[path]; else r[path] = pos; localStorage.setItem(RESUME_KEY, JSON.stringify(r)); } catch { /* storage unavailable */ } };
+const isRemote = (path: string) => /^https?:\/\//i.test(path);
+const writeResume = (path: string, pos: number, dur: number) => { if (isRemote(path)) return; const done = dur > 0 && (pos < 5 || pos > dur - 10); void window.oneplay.shareResume(shareKey(path), done ? 0 : pos, dur); try { const r = readResume(); if (dur > 0 && (pos < 5 || pos > dur - 10)) delete r[path]; else r[path] = pos; localStorage.setItem(RESUME_KEY, JSON.stringify(r)); } catch { /* storage unavailable */ } };
 
 const toMedia = (path: string): Media => ({ path, name: (path.split(/[\\/]/).pop() || path).replace(/\.[^.]+$/, "") });
 const clock = (n: number) => {
@@ -44,6 +46,9 @@ export default function App() {
   const [chapter, setChapter] = useState(-1);
   const [onTop, setOnTop] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
+  const [phone, setPhone] = useState<PhoneState | null>(null);
+  useEffect(() => { void window.oneplay.phoneState().then(setPhone); return window.oneplay.onPhone(setPhone); }, []);
   const [embed, setEmbed] = useState<{ embed: boolean; supported: boolean }>({ embed: true, supported: false });
   useEffect(() => { void window.oneplay.getEmbed().then(setEmbed); }, []);
   const [lists, setLists] = useState<Lists>({ fav: {}, playlists: {} });
@@ -89,10 +94,10 @@ export default function App() {
     const item = list[i];
     if (!item) return;
     if (live.current.index >= 0) { const c = live.current.queue[live.current.index]; if (c) writeResume(c.path, live.current.position, live.current.duration); }
-    remember(list);
+    if (!isRemote(item.path)) remember(list);
     setMeta({}); setArt(null);
     pendingResume.current = readResume()[item.path] ?? 0;
-    try { const r = await window.oneplay.getShareResume(shareKey(item.path)); if (r) pendingResume.current = r.pos; } catch { /* sharing unavailable */ }
+    if (!isRemote(item.path)) try { const r = await window.oneplay.getShareResume(shareKey(item.path)); if (r) pendingResume.current = r.pos; } catch { /* sharing unavailable */ }
     setChapters([]); setChapter(-1);
     setQueue(list); setIndex(i); setError(""); setInfo(""); setPosition(0);
     setRecent((prev) => {
@@ -167,7 +172,7 @@ export default function App() {
   useEffect(() => {
     if (!current || !AUDIO_EXT.test(current.path)) { setArt(null); return; }
     let alive = true;
-    void window.oneplay.grabFrame(current.path, 0, 600).then((a) => { if (alive) setArt(a); });
+    if (!isRemote(current.path)) void window.oneplay.grabFrame(current.path, 0, 600).then((a) => { if (alive) setArt(a); });
     return () => { alive = false; };
   }, [current?.path]);
 
@@ -206,7 +211,7 @@ export default function App() {
     const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); const t = f * duration; const x = e.clientX - (box?.left ?? 0);
     setHover((h) => ({ x, t, img: h?.img ?? null }));
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => { void window.oneplay.grabFrame(current.path, t, 240).then((img) => setHover((h) => (h ? { ...h, img } : h))); }, 140);
+    if (!isRemote(current.path)) hoverTimer.current = setTimeout(() => { void window.oneplay.grabFrame(current.path, t, 240).then((img) => setHover((h) => (h ? { ...h, img } : h))); }, 140);
   };
 
   const openFiles = async () => {
@@ -303,6 +308,7 @@ export default function App() {
             {current && <button className="icon-button" title="Add to playlist" onClick={() => setAddOpen(true)}><ListPlus size={16} /></button>}
             {current && !AUDIO_EXT.test(current.path) && <button className="icon-button" title="Find subtitles" onClick={() => setSubsOpen(true)}><Search size={16} /></button>}
             {embed.supported && <button className={`icon-button ${embed.embed ? "active" : ""}`} title={embed.embed ? "Video is inside this window. Click to use a separate video window (restarts OnePlay)." : "Video opens in its own window. Click to try showing it inside this window (restarts OnePlay)."} onClick={() => { if (window.confirm(embed.embed ? "Play video in its own window? OnePlay will restart." : "Show video inside this window (experimental)? OnePlay will restart.")) void window.oneplay.setEmbed(!embed.embed); }}><MonitorPlay size={16} /></button>}
+            {phone?.connected && <button className="icon-button active" title="Videos on your phone" onClick={() => setPhoneOpen(true)}><Smartphone size={16} /></button>}
             <button className="icon-button" title="Wi-Fi sharing and phone sync" onClick={() => setShareOpen(true)}><Wifi size={16} /></button>
             <button className="icon-button" title="Load subtitles" onClick={() => window.oneplay.addSubtitle()}><Captions size={17} /></button>
             <button className="icon-button" title="Cycle subtitles (S)" onClick={() => window.oneplay.cycleSub()}><Layers size={16} /></button>
@@ -378,6 +384,7 @@ export default function App() {
       </section>
       {subsOpen && current && <SubsPanel media={current} onClose={() => setSubsOpen(false)} />}
       {addOpen && current && <AddToPlaylist media={current} lists={lists} onClose={() => setAddOpen(false)} />}
+      {phoneOpen && phone?.connected && <PhonePanel phone={phone} onClose={() => setPhoneOpen(false)} onPlay={(list, i) => { setPhoneOpen(false); void playAt(list, i); }} />}
       {shareOpen && <SharePanel onClose={() => setShareOpen(false)} />}
       {dragging && <div className="drop-overlay"><div>Drop to play</div></div>}
     </main>

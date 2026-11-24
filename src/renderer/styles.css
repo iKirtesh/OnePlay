@@ -151,3 +151,7 @@ input[type=range]:hover::-webkit-slider-thumb, input[type=range]:focus-visible::
 .own-window-hint { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 24px; color: var(--text-2); pointer-events: none; }
 .own-window-hint b { color: var(--text); font-size: 15px; }
 .own-window-hint span { font-size: 12px; max-width: 360px; line-height: 1.5; }
+.share-folders { max-height: 50vh; overflow-y: auto; }
+.share-folder { display: flex; justify-content: space-between; align-items: center; gap: 10px; text-align: left; padding: 8px 10px; border-radius: 8px; border: 0; background: rgba(255,255,255,.06); color: inherit; cursor: pointer; }
+.share-folder:hover { background: rgba(255,255,255,.12); }
+.share-folder span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }

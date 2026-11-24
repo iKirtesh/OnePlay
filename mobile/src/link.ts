@@ -10,6 +10,7 @@ class Link {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private backoff = 1200;
   private listeners = new Set<StatusFn>();
+  private raw = new Set<(m: any) => void>();
   private stateListeners = new Set<(up: boolean) => void>();
   connected = false;
   last: LiveStatus | null = null;
@@ -19,6 +20,11 @@ class Link {
   onStatus(fn: StatusFn) { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
   onState(fn: (up: boolean) => void) { this.stateListeners.add(fn); return () => { this.stateListeners.delete(fn); }; }
 
+  onMessage(fn: (m: any) => void) { this.raw.add(fn); return () => { this.raw.delete(fn); }; }
+  sendRaw(msg: Record<string, unknown>): boolean {
+    if (!this.ws || !this.connected) return false;
+    try { this.ws.send(JSON.stringify(msg)); return true; } catch { return false; }
+  }
   send(cmd: Record<string, unknown>): boolean {
     if (!this.ws || !this.connected) return false;
     try { this.ws.send(JSON.stringify({ type: 'cmd', ...cmd })); return true; } catch { return false; }
@@ -33,6 +39,7 @@ class Link {
     ws.onmessage = (e) => {
       try {
         const m = JSON.parse(String(e.data));
+        this.raw.forEach((f) => f(m));
         if (m.type === 'status') { const { type: _t, ...rest } = m; this.last = { ...rest, recvAt: Date.now() }; this.listeners.forEach((f) => f(this.last!)); }
       } catch { /* ignore */ }
     };

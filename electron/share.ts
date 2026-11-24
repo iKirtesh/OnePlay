@@ -111,6 +111,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     store.tokens.push(token); code = newCode(); save(); notify();
     return json(res, 200, { token, name: os.hostname() });
   }
+  const ph = url.pathname.match(/^\/phone\/([0-9a-f]{32})\/([^/]+)\.([A-Za-z0-9]{2,5})$/);
+  if (ph) { // opened by the local player, so the per-run local token is enough
+    if (ph[1] !== localToken || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip)) return json(res, 403, { error: "Forbidden" });
+    return streamFromPhone(req, res, decodeURIComponent(ph[2]!), ph[3]!);
+  }
   if (!authed(req, url)) return json(res, 401, { error: "Not paired" });
   if (url.pathname === "/api/library") { await rescan(url.searchParams.get("refresh") === "1"); return json(res, 200, { folders: tree }); }
   if (url.pathname === "/api/sync") {
@@ -202,14 +207,14 @@ function upgrade(req: http.IncomingMessage, sock: net.Socket) {
   if (status) sendJson(sock, { type: "status", ...status, online: Date.now() - statusAt < 5000 });
   sock.on("data", (chunk) => {
     buf = Buffer.concat([buf, chunk]);
-    if (buf.length > 1_000_000) { sock.destroy(); return; }
+    if (buf.length > 2_000_000) { sock.destroy(); return; }
     for (;;) {
       if (buf.length < 2) return;
       const fin = (buf[0]! & 0x80) !== 0, op = buf[0]! & 0x0f, masked = (buf[1]! & 0x80) !== 0;
       let len = buf[1]! & 0x7f, off = 2;
       if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
       else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
-      if (len > 65536 || !masked || !fin) { sock.destroy(); return; }
+      if (len > 1_500_000 || !masked || !fin) { sock.destroy(); return; }
       if (buf.length < off + 4 + len) return;
       const mask = buf.subarray(off, off + 4); const data = Buffer.from(buf.subarray(off + 4, off + 4 + len));
       for (let i = 0; i < data.length; i++) data[i]! ^= mask[i % 4]!;
@@ -220,14 +225,81 @@ function upgrade(req: http.IncomingMessage, sock: net.Socket) {
         try {
           const m = JSON.parse(data.toString("utf8"));
           if (m?.type === "cmd") void runCommand(m).then((r) => { if (r.code !== 200) sendJson(sock, { type: "error", ...(r.body as object) }); });
+          else if (m?.type === "library" && Array.isArray(m.folders)) {
+            provider = sock; phoneName = String(m.name ?? "Phone").slice(0, 60); sizes.clear();
+            phoneLib = m.folders.slice(0, 500).map((f: any) => ({ id: String(f.id).slice(0, 200), name: String(f.name).slice(0, 120), items: (Array.isArray(f.items) ? f.items : []).slice(0, 5000).map((i: any) => ({ id: String(i.id).slice(0, 120), name: String(i.name).slice(0, 200), kind: i.kind === "audio" ? "audio" : "video", duration: Number(i.duration) || 0 })) }));
+            phoneChanged?.();
+          } else if (m?.type === "unshare") clearPhone(sock);
+          else if (m?.type === "reply" && sock === provider && pending.has(m.req)) { const p = pending.get(m.req)!; clearTimeout(p.timer); pending.delete(m.req); p.resolve(m); }
         } catch { /* ignore malformed message */ }
       }
     }
   });
-  const drop = () => clients.delete(sock);
+  const drop = () => { clients.delete(sock); clearPhone(sock); };
   sock.on("close", drop); sock.on("error", () => { drop(); sock.destroy(); });
 }
 setInterval(() => { for (const c of clients) if (!c.destroyed) c.write(frame(0x9, Buffer.alloc(0))); }, 25000).unref?.();
+
+/* ---------- The phone shares its own videos: the computer asks for pieces of a file over the live connection ---------- */
+type PhoneItem = { id: string; name: string; kind: string; duration: number };
+type PhoneFolder = { id: string; name: string; items: PhoneItem[] };
+let provider: net.Socket | null = null;
+let phoneName = "";
+let phoneLib: PhoneFolder[] = [];
+const localToken = crypto.randomBytes(16).toString("hex"); // lets the local player open phone files without the pairing token
+const pending = new Map<number, { resolve: (m: any) => void; timer: NodeJS.Timeout }>();
+const sizes = new Map<string, number>();
+let reqId = 0;
+let phoneChanged: (() => void) | null = null;
+export const onPhoneChanged = (fn: () => void) => { phoneChanged = fn; };
+export const phoneState = () => ({ connected: !!provider, name: phoneName, folders: phoneLib, base: `http://127.0.0.1:${port}/phone/${localToken}` });
+function clearPhone(sock?: net.Socket) {
+  if (sock && provider !== sock) return;
+  provider = null; phoneLib = []; sizes.clear();
+  for (const [id, p] of pending) { clearTimeout(p.timer); p.resolve({ error: "Phone disconnected" }); pending.delete(id); }
+  phoneChanged?.();
+}
+function askPhone(msg: Record<string, unknown>, timeoutMs = 15000): Promise<any> {
+  return new Promise((resolve) => {
+    if (!provider) return resolve({ error: "Phone not connected" });
+    const id = ++reqId;
+    const timer = setTimeout(() => { pending.delete(id); resolve({ error: "Phone did not answer" }); }, timeoutMs);
+    pending.set(id, { resolve, timer });
+    sendJson(provider, { ...msg, req: id });
+  });
+}
+const itemById = (id: string) => phoneLib.flatMap((f) => f.items).find((i) => i.id === id);
+const PHONE_MIME = (name: string) => MIME[(name.split(".").pop() ?? "").toLowerCase()] ?? "video/mp4";
+
+async function streamFromPhone(req: http.IncomingMessage, res: http.ServerResponse, id: string, ext: string) {
+  const item = itemById(id);
+  if (!item || !provider) return json(res, 404, { error: "Phone file not available" });
+  let known = sizes.get(id);
+  if (known === undefined) { const r = await askPhone({ type: "stat", file: id }, 8000); if (typeof r.size !== "number") return json(res, 502, { error: r.error ?? "Cannot read file" }); const n: number = r.size; sizes.set(id, n); known = n; }
+  const size = known as number;
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+  let start = 0, end = size - 1, status = 200;
+  if (range) { if (range[1]) { start = Number(range[1]); end = range[2] ? Math.min(Number(range[2]), end) : end; } else if (range[2]) start = Math.max(0, size - Number(range[2])); status = 206; }
+  if (start > end || start >= size) { res.writeHead(416, { "Content-Range": `bytes */${size}` }); res.end(); return; }
+  const headers: Record<string, string | number> = { "Content-Type": MIME[ext.toLowerCase()] ?? PHONE_MIME(item.name), "Accept-Ranges": "bytes", "Content-Length": end - start + 1 };
+  if (status === 206) headers["Content-Range"] = `bytes ${start}-${end}/${size}`;
+  res.writeHead(status, headers);
+  if (req.method === "HEAD") { res.end(); return; }
+  let closed = false; res.on("close", () => { closed = true; });
+  const CH = 512 * 1024;
+  const fetchChunk = (pos: number) => askPhone({ type: "read", file: id, start: pos, length: Math.min(CH, end - pos + 1) });
+  let pos = start; let next = fetchChunk(pos);
+  while (pos <= end && !closed) {
+    const r = await next;
+    if (r.error || typeof r.data !== "string") { res.destroy(); return; }
+    const buf = Buffer.from(r.data, "base64");
+    if (!buf.length) { res.destroy(); return; }
+    pos += buf.length;
+    if (pos <= end && !closed) next = fetchChunk(pos); // ask for the next piece while this one is sent
+    if (!res.write(buf)) await new Promise<void>((ok) => { res.once("drain", ok); res.once("close", ok); });
+  }
+  res.end();
+}
 
 let onChange: (() => void) | null = null;
 const notify = () => onChange?.();

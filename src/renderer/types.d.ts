@@ -1,5 +1,6 @@
 export {};
 declare global {
+  type PhoneState = { connected: boolean; name: string; base: string; folders: { id: string; name: string; items: { id: string; name: string; kind: string; duration: number }[] }[] };
   type Playlist = { id: string; name: string; items: string[]; at: number; deleted?: boolean };
   type Lists = { fav: Record<string, { on: boolean; at: number }>; playlists: Record<string, Playlist> };
   type ShareState = { enabled: boolean; port: number; addresses: string[]; code: string; folders: string[]; devices: number };
@@ -35,6 +36,8 @@ declare global {
       openUpdate: (url: string) => Promise<boolean>;
       getEmbed: () => Promise<{ embed: boolean; supported: boolean }>;
       setEmbed: (on: boolean) => Promise<boolean>;
+      phoneState: () => Promise<PhoneState>;
+      onPhone: (cb: (s: PhoneState) => void) => () => void;
       shareStatus: (st: unknown) => Promise<boolean>;
       listsGet: () => Promise<Lists>;
       listsPut: (l: Partial<Lists>) => Promise<Lists>;

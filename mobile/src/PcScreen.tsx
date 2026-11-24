@@ -9,6 +9,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Conn, PcFolder, PcStatus, clearConn, fetchLibrary, fileUrl, loadConn, pair, pairFromQr, parsePairQr, pcControl, pcStatus } from './remote';
 import { clock } from './theme';
 import { link } from './link';
+import { isPhoneShareOn, setPhoneShare } from './phoneShare';
 import { FollowScreen } from './FollowScreen';
 import type { Play } from './Library';
 
@@ -24,6 +25,8 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [view, setView] = useState<'browse' | 'remote'>('browse');
+  const [sharing, setSharing] = useState(false);
+  useEffect(() => { void isPhoneShareOn().then(setSharing); }, []);
   const [note, setNote] = useState('');
   const [follow, setFollow] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -94,6 +97,12 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
             </Pressable>
           ))}
         </View>
+      ) : null}
+      {conn && !open ? (
+        <Pressable onPress={() => { const v = !sharing; setSharing(v); void setPhoneShare(v); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginBottom: 8 }}>
+          <Feather name={sharing ? 'check-square' : 'square'} size={20} color={t.accent} />
+          <Text style={{ color: t.text, flex: 1 }}>Share this phone's videos with the computer{sharing ? ' (keep this app open)' : ''}</Text>
+        </Pressable>
       ) : null}
       {note ? <Text style={{ color: t.accent, textAlign: 'center', paddingBottom: 6 }}>{note}</Text> : null}
       {conn === undefined ? <ActivityIndicator style={{ marginTop: 60 }} color={t.accent} /> : null}

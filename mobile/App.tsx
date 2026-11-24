@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -8,8 +8,11 @@ import { VlcScreen } from './src/VlcScreen';
 import { PcScreen } from './src/PcScreen';
 import { PlaylistsScreen } from './src/PlaylistsScreen';
 import type { Item } from './src/scan';
+import { loadConn } from './src/remote';
+import { resumePhoneShare } from './src/phoneShare';
 
 export default function App() {
+  useEffect(() => { void loadConn().then((c) => { if (c) void resumePhoneShare(); }); }, []);
   const [play, setPlay] = useState<Play | null>(null);
   const [vlc, setVlc] = useState<Item | null>(null);
   const [pc, setPc] = useState(false);

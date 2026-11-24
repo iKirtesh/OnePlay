@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld("oneplay", {
   openUpdate: (url: string) => ipcRenderer.invoke("update:open", url),
   getEmbed: () => ipcRenderer.invoke("app:get-embed"),
   setEmbed: (on: boolean) => ipcRenderer.invoke("app:set-embed", on),
+  phoneState: () => ipcRenderer.invoke("phone:state"),
+  onPhone: (cb: (s: any) => void) => { const f = (_e: Electron.IpcRendererEvent, v: any) => cb(v); ipcRenderer.on("phone:state", f); return () => ipcRenderer.removeListener("phone:state", f); },
   shareStatus: (st: unknown) => ipcRenderer.invoke("share:status", st),
   listsGet: () => ipcRenderer.invoke("share:lists-get"),
   listsPut: (l: unknown) => ipcRenderer.invoke("share:lists-put", l),
