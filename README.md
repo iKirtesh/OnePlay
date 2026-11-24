@@ -54,7 +54,9 @@ A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 - **Controls:** speed 0.25x to 3x, audio tracks, subtitles (including external `.srt` / `.vtt`), aspect modes, A-B repeat, frame step, sleep timer, screen lock, auto-rotate, picture-in-picture and background audio.
 - **Library tools:** search, favorites, sort, hide folders, continue-watching row and resume positions.
 - **Remote control:** play, pause, seek and change volume on your computer from the phone, updated live, or send a video to the computer to play.
-- **Phone videos on the computer:** turn on "Share this phone's videos with the computer" in the phone's computer screen, then tap the phone icon in OnePlay on the computer to browse and play them. Files stream over Wi-Fi as you watch; keep the phone app open.
+- **Watch now banner:** when the computer starts a video, the phone offers to join with one tap.
+- **Black picture fix:** if a video plays but shows nothing, OnePlay switches to software decoding by itself (or use the chip button in the top bar).
+- **Phone videos on the computer:** turn on "Share this phone's videos with the computer" in the phone's computer screen, then tap the phone icon in OnePlay on the computer to browse and play them. Files stream over Wi-Fi as you watch; a notification keeps sharing alive while the phone screen is off.
 - **Watch together:** the phone plays the same video as the computer and stays in step. Pause, seek or change speed on either device and the other follows.
 - **Favorites and playlists** sync with the computer, matched by file name.
 - **My computer:** browse and stream the folders you share from desktop OnePlay over Wi-Fi, and continue where you left off on the other device.

@@ -8,6 +8,7 @@ import { VlcScreen } from './src/VlcScreen';
 import { PcScreen } from './src/PcScreen';
 import { PlaylistsScreen } from './src/PlaylistsScreen';
 import type { Item } from './src/scan';
+import { WatchBanner } from './src/WatchBanner';
 import { loadConn } from './src/remote';
 import { resumePhoneShare } from './src/phoneShare';
 
@@ -17,6 +18,7 @@ export default function App() {
   const [vlc, setVlc] = useState<Item | null>(null);
   const [pc, setPc] = useState(false);
   const [pls, setPls] = useState(false);
+  const [auto, setAuto] = useState(false);
   return (
     <SafeAreaProvider>
       <StatusBar style="auto" />
@@ -27,10 +29,11 @@ export default function App() {
       ) : pls ? (
         <PlaylistsScreen onPlay={setPlay} onClose={() => setPls(false)} />
       ) : pc ? (
-        <PcScreen onPlay={setPlay} onClose={() => setPc(false)} />
+        <PcScreen autoFollow={auto} onPlay={setPlay} onClose={() => { setPc(false); setAuto(false); }} />
       ) : (
         <LibraryScreen onPlay={setPlay} onPc={() => setPc(true)} onLists={() => setPls(true)} />
       )}
+      {!vlc && !play && !pc ? <WatchBanner onWatch={() => { setAuto(true); setPc(true); }} /> : null}
     </SafeAreaProvider>
   );
 }

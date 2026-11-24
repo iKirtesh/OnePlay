@@ -4,7 +4,7 @@ import { PhonePanel } from "./PhonePanel";
 import { AddToPlaylist, FavButton, ListsPane } from "./Lists";
 import { SubsPanel } from "./SubsPanel";
 import { AUDIO_EXT, Media, remember, shuffled } from "./lib";
-import { Smartphone, Heart, ListPlus, MonitorPlay, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { Cpu, Smartphone, Heart, ListPlus, MonitorPlay, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 
 type Tab = "queue" | "recent" | "favs" | "lists";
 const MEDIA_EXT = /\.(mp4|mkv|avi|mov|webm|m4v|mp3|flac|wav|aac|ogg|opus|m4a|wmv|ts)$/i;
@@ -51,6 +51,8 @@ export default function App() {
   useEffect(() => { void window.oneplay.phoneState().then(setPhone); return window.oneplay.onPhone(setPhone); }, []);
   const [embed, setEmbed] = useState<{ embed: boolean; supported: boolean }>({ embed: true, supported: false });
   useEffect(() => { void window.oneplay.getEmbed().then(setEmbed); }, []);
+  const [swdec, setSwdec] = useState(false);
+  useEffect(() => { void window.oneplay.getSwdec().then(setSwdec); }, []);
   const [lists, setLists] = useState<Lists>({ fav: {}, playlists: {} });
   const [subsOpen, setSubsOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -308,6 +310,7 @@ export default function App() {
             {current && <button className="icon-button" title="Add to playlist" onClick={() => setAddOpen(true)}><ListPlus size={16} /></button>}
             {current && !AUDIO_EXT.test(current.path) && <button className="icon-button" title="Find subtitles" onClick={() => setSubsOpen(true)}><Search size={16} /></button>}
             {embed.supported && <button className={`icon-button ${embed.embed ? "active" : ""}`} title={embed.embed ? "Video is inside this window. Click to use a separate video window (restarts OnePlay)." : "Video opens in its own window. Click to try showing it inside this window (restarts OnePlay)."} onClick={() => { if (window.confirm(embed.embed ? "Play video in its own window? OnePlay will restart." : "Show video inside this window (experimental)? OnePlay will restart.")) void window.oneplay.setEmbed(!embed.embed); }}><MonitorPlay size={16} /></button>}
+            <button className={`icon-button ${swdec ? "active" : ""}`} title={swdec ? "Software decoding is on (fixes a black picture). Click to use the graphics card again." : "Picture black? Click to use software decoding."} onClick={() => { const v = !swdec; setSwdec(v); void window.oneplay.setSwdec(v); }}><Cpu size={16} /></button>
             {phone?.connected && <button className="icon-button active" title="Videos on your phone" onClick={() => setPhoneOpen(true)}><Smartphone size={16} /></button>}
             <button className="icon-button" title="Wi-Fi sharing and phone sync" onClick={() => setShareOpen(true)}><Wifi size={16} /></button>
             <button className="icon-button" title="Load subtitles" onClick={() => window.oneplay.addSubtitle()}><Captions size={17} /></button>

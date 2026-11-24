@@ -1,5 +1,7 @@
+import { PermissionsAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FS from 'expo-file-system/legacy';
+import BackgroundActions from 'react-native-background-actions';
 import { link } from './link';
 import { getLibrary } from './scan';
 
@@ -36,9 +38,23 @@ async function onMsg(m: any) {
   } catch (e) { link.sendRaw({ type: 'reply', req: m.req, error: (e as Error).message }); }
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** Keeps the app alive with a notification so the computer can keep playing phone files when the screen is off. */
+async function keepAlive() {
+  try {
+    if (Platform.OS === 'android' && Number(Platform.Version) >= 33) await PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS' as never).catch(() => null);
+    if (BackgroundActions.isRunning()) return;
+    await BackgroundActions.start(async () => { while (BackgroundActions.isRunning()) await sleep(4000); }, {
+      taskName: 'OnePlay sharing', taskTitle: 'OnePlay is sharing videos', taskDesc: 'Your computer can play videos from this phone.',
+      taskIcon: { name: 'ic_launcher', type: 'mipmap' }, color: '#0A84FF', foregroundServiceType: ['dataSync'],
+    } as never);
+  } catch { /* sharing still works while the app is open */ }
+}
+
 function start() {
   if (running) return;
   running = true;
+  void keepAlive();
   link.acquire();
   offs = [link.onMessage((m) => { void onMsg(m); }), link.onState((up) => { if (up) publish(); })];
   if (link.connected) publish();
@@ -48,6 +64,7 @@ function start() {
 function stop() {
   if (!running) return;
   running = false;
+  void BackgroundActions.stop().catch(() => {});
   link.sendRaw({ type: 'unshare' });
   offs.forEach((f) => f()); offs = [];
   if (tick) { clearInterval(tick); tick = null; }

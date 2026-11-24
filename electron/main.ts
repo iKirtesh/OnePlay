@@ -18,7 +18,7 @@ let relativeBounds = { x: 0, y: 0, width: 640, height: 360 };
 const pendingCommands: unknown[][] = [];
 
 const prefsFile = () => path.join(app.getPath("userData"), "prefs.json");
-function readPrefs(): { embedVideo?: boolean } { try { return JSON.parse(fs.readFileSync(prefsFile(), "utf8")); } catch { return {}; } }
+function readPrefs(): { embedVideo?: boolean; swdec?: boolean } { try { return JSON.parse(fs.readFileSync(prefsFile(), "utf8")); } catch { return {}; } }
 /** Whether this system can draw video inside the app window at all. */
 function embedSupported() {
   if (process.platform === "linux") return process.env.XDG_SESSION_TYPE !== "wayland";
@@ -36,6 +36,21 @@ function endpoint() {
   return path.join(os.tmpdir(), `oneplay-mpv-${process.pid}.sock`);
 }
 
+const writePrefs = (patch: Record<string, unknown>) => { try { fs.writeFileSync(prefsFile(), JSON.stringify({ ...readPrefs(), ...patch })); return true; } catch { return false; } };
+// Black-picture watchdog: if the video is playing but nothing is on screen, switch to software decoding.
+let lastPos = 0, voConfigured: boolean | null = null, hasVideo = false, watchdog: NodeJS.Timeout | null = null;
+function armWatchdog() {
+  if (watchdog) clearTimeout(watchdog);
+  lastPos = 0; voConfigured = null; hasVideo = false;
+  watchdog = setTimeout(() => {
+    if (readPrefs().swdec || !mpv || !hasVideo || lastPos < 0.5 || voConfigured !== false) return;
+    writePrefs({ swdec: true });
+    sendMpv(["set_property", "hwdec", "no"]);
+    sendMpv(["seek", lastPos, "absolute"]);
+    sendStatus({ event: "info", message: "The picture was blank, so OnePlay switched to software decoding for this and later videos." });
+    sendStatus({ event: "swdec", value: true });
+  }, 4500);
+}
 function sendStatus(status: Record<string, unknown>) {
   windowRef?.webContents.send("player:property", status);
 }
@@ -66,6 +81,7 @@ function connectMpv(attempt = 0) {
     sendMpv(["observe_property", 10, "track-list"]);
     sendMpv(["observe_property", 11, "chapter"]);
     sendMpv(["observe_property", 12, "metadata"]);
+    sendMpv(["observe_property", 13, "vo-configured"]);
   });
   client.on("data", chunk => {
     buffer += chunk.toString();
@@ -74,7 +90,12 @@ function connectMpv(attempt = 0) {
     for (const line of lines) {
       try {
         const message = JSON.parse(line);
-        if (message.event === "property-change") sendStatus(message);
+        if (message.event === "property-change") {
+          if (message.name === "time-pos" && typeof message.data === "number") lastPos = message.data;
+          else if (message.name === "vo-configured") voConfigured = !!message.data;
+          else if (message.name === "track-list" && Array.isArray(message.data)) hasVideo = message.data.some((t: any) => t.type === "video" && !t.albumart);
+          sendStatus(message);
+        }
       } catch { /* Ignore non-JSON mpv output. */ }
     }
   });
@@ -142,7 +163,7 @@ function startMpv() {
   const args = [
     "--idle=yes", "--force-window=yes", "--keep-open=yes",
     `--input-ipc-server=${ipcEndpoint}`, "--terminal=no",
-    "--msg-level=all=warn", "--ontop=no"
+    "--msg-level=all=warn", "--ontop=no", `--hwdec=${readPrefs().swdec ? "no" : "auto-safe"}`
   ];
   if (canEmbedNativeWindow()) args.push("--keepaspect-window=no", "--no-border");
   else args.push("--autofit=60%", "--autofit-larger=92%x92%", "--title=OnePlay - ${media-title}");
@@ -225,6 +246,7 @@ app.whenReady().then(() => {
       if (/\.(mp3|flac|wav|aac|ogg|opus|m4a)$/i.test(filePath)) videoHost.hide();
       else { videoHost.showInactive(); updateVideoHostBounds(); }
     }
+    armWatchdog();
     sendMpv(["loadfile", filePath, "replace"]);
     return true;
   });
@@ -280,6 +302,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("update:check", () => extras.checkUpdate());
   ipcMain.handle("update:open", (_e, url: string) => { extras.openRelease(String(url)); return true; });
+  ipcMain.handle("app:get-swdec", () => !!readPrefs().swdec);
+  ipcMain.handle("app:set-swdec", (_e, on: boolean) => { writePrefs({ swdec: !!on }); sendMpv(["set_property", "hwdec", on ? "no" : "auto-safe"]); return !!on; });
   ipcMain.handle("app:get-embed", () => ({ embed: canEmbedNativeWindow(), supported: embedSupported() }));
   ipcMain.handle("app:set-embed", (_e, on: boolean) => {
     if (!embedSupported()) return false;

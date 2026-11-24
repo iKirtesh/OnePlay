@@ -27,10 +27,22 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#0A84FF"
-      }
+      },
+      "permissions": [
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_DATA_SYNC",
+        "POST_NOTIFICATIONS",
+        "WAKE_LOCK"
+      ]
     },
     "plugins": [
-      ["expo-camera", { "cameraPermission": "OnePlay uses the camera to scan the pairing QR code shown on your computer.", "recordAudioAndroid": false }],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "OnePlay uses the camera to scan the pairing QR code shown on your computer.",
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-video",
         {
@@ -73,7 +85,8 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "./plugins/bg-service.js"
     ]
   }
 }

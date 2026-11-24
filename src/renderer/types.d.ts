@@ -34,6 +34,8 @@ declare global {
       subsDownload: (id: number, video: string, lang: string) => Promise<{ path: string; remaining?: number }>;
       checkUpdate: () => Promise<{ version: string; url: string } | null>;
       openUpdate: (url: string) => Promise<boolean>;
+      getSwdec: () => Promise<boolean>;
+      setSwdec: (on: boolean) => Promise<boolean>;
       getEmbed: () => Promise<{ embed: boolean; supported: boolean }>;
       setEmbed: (on: boolean) => Promise<boolean>;
       phoneState: () => Promise<PhoneState>;

@@ -15,7 +15,7 @@ import type { Play } from './Library';
 
 const size = (n: number) => (n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1e6))} MB`);
 
-export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClose: () => void }) {
+export function PcScreen({ onPlay, onClose, autoFollow }: { onPlay: (p: Play) => void; onClose: () => void; autoFollow?: boolean }) {
   const t = useTheme();
   const [conn, setConn] = useState<Conn | null | undefined>(undefined);
   const [host, setHost] = useState('');
@@ -28,7 +28,7 @@ export function PcScreen({ onPlay, onClose }: { onPlay: (p: Play) => void; onClo
   const [sharing, setSharing] = useState(false);
   useEffect(() => { void isPhoneShareOn().then(setSharing); }, []);
   const [note, setNote] = useState('');
-  const [follow, setFollow] = useState(false);
+  const [follow, setFollow] = useState(!!autoFollow);
   const [scanning, setScanning] = useState(false);
   const [perm, askPerm] = useCameraPermissions();
   const scanned = React.useRef(false);
