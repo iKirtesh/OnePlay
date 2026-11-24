@@ -54,6 +54,9 @@ A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 - **Controls:** speed 0.25x to 3x, audio tracks, subtitles (including external `.srt` / `.vtt`), aspect modes, A-B repeat, frame step, sleep timer, screen lock, auto-rotate, picture-in-picture and background audio.
 - **Library tools:** search, favorites, sort, hide folders, continue-watching row and resume positions.
 - **Remote control:** play, pause, seek and change volume on your computer from the phone, updated live, or send a video to the computer to play.
+- **Subtitles on the phone:** in the player's subtitle menu choose *Search online*. It searches through your computer's OpenSubtitles key, so set that up on the computer first.
+- **Save to phone:** the download icon beside a computer file copies it into Movies/OnePlay for offline viewing.
+- **Browser player:** open `http://<computer address>:8765/web` in any browser on the same Wi-Fi, enter the pairing code, and watch shared folders with nothing installed (MP4 plays best).
 - **Equalizer and volume boost:** bass and treble sliders next to the volume bar, and volume up to 150% for quiet videos.
 - **Continue watching:** the phone's home row now includes videos you stopped halfway on the computer.
 - **Watch now banner:** when the computer starts a video, the phone offers to join with one tap.

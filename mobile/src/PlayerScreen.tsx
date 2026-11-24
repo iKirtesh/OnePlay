@@ -12,7 +12,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { getResume, saveResume } from './storage';
 import { pushResume, remoteResume } from './remote';
 import { link, LiveStatus } from './link';
-import { Cue, cueAt, findSibling, readSubs } from './subs';
+import { Cue, cueAt, findSibling, parseSubs, readSubs } from './subs';
+import { PcSub, searchSubsOnPc, subsTextFromPc } from './remote';
 
 // Many sites refuse requests that do not look like a browser (HTTP 403), so web links are opened with browser-like headers.
 const BROWSER_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
@@ -26,7 +27,7 @@ const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
 const SLEEP = [0, 15, 30, 45, 60, 90];
 const FITS = ['contain', 'cover', 'fill'] as const;
 const FIT_LABEL = { contain: 'Fit', cover: 'Fill screen', fill: 'Stretch' } as const;
-type Sheet = null | 'speed' | 'audio' | 'subs' | 'sleep' | 'more';
+type Sheet = null | 'speed' | 'audio' | 'subs' | 'sleep' | 'more' | 'subsearch';
 type Track = { id: string; label: string; language: string } | null;
 
 export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { queue: Item[]; index: number; onClose: () => void; onVlc?: (i: Item) => void; sync?: boolean }) {
@@ -52,6 +53,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
   const [error, setError] = useState('');
   const [cues, setCues] = useState<Cue[]>([]);
   const [subDelay, setSubDelay] = useState(0);
+  const [hits, setHits] = useState<PcSub[] | string | null>(null);
   const [subSize, setSubSize] = useState(18);
   const [ab, setAb] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   const viewRef = useRef<VideoView>(null);
@@ -194,6 +196,14 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [width, height]);
 
+  const searchOnline = () => {
+    setHits(null); setSheet('subsearch');
+    void searchSubsOnPc(item?.name ?? '').then((r) => setHits(r.length ? r : 'No subtitles found')).catch((e: Error) => setHits(e.message));
+  };
+  const useHit = (h: PcSub) => {
+    setSheet(null); flash('type', 'Downloading subtitles…');
+    void subsTextFromPc(h.fileId).then((txt) => { const c = parseSubs(txt); if (!c.length) throw new Error('Empty subtitle file'); setCues(c); setSubSel(null); flash('type', `${c.length} lines loaded`); }).catch((e: Error) => flash('alert-circle', e.message.slice(0, 60)));
+  };
   const loadSubFile = async () => {
     setSheet(null);
     const r = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
@@ -235,7 +245,8 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
         { key: 's-', label: 'Subtitle text smaller', on: false, pick: () => setSubSize((z) => Math.max(10, z - 2)) },
         { key: 's+', label: 'Subtitle text larger', on: false, pick: () => setSubSize((z) => Math.min(40, z + 2)) },
       ]
-    : sheet === 'subs' ? [{ key: 'off', label: 'Off', on: !subSel && cues.length === 0, pick: () => { pickSub(null); setCues([]); } }, { key: 'file', label: 'Load subtitle file (.srt / .vtt)…', on: cues.length > 0, pick: () => void loadSubFile() }, ...subTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === subSel, pick: () => pickSub(t.id) }))]
+    : sheet === 'subsearch' ? (typeof hits === 'string' ? [{ key: 'msg', label: hits, on: false, pick: () => setSheet('subs') }] : hits === null ? [{ key: 'wait', label: 'Searching…', on: false, pick: () => {} }] : hits.slice(0, 15).map((h) => ({ key: String(h.fileId), label: `${h.release}  ·  ${h.language}`, on: false, pick: () => useHit(h) })))
+    : sheet === 'subs' ? [{ key: 'off', label: 'Off', on: !subSel && cues.length === 0, pick: () => { pickSub(null); setCues([]); } }, { key: 'online', label: 'Search online (uses your computer)…', on: false, pick: searchOnline }, { key: 'file', label: 'Load subtitle file (.srt / .vtt)…', on: cues.length > 0, pick: () => void loadSubFile() }, ...subTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === subSel, pick: () => pickSub(t.id) }))]
     : [];
 
   if (!item) return null;
@@ -297,7 +308,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
       <Modal visible={sheet !== null} transparent animationType="fade" onRequestClose={() => setSheet(null)}>
         <Pressable onPress={() => setSheet(null)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', alignItems: 'center' }}>
           <View style={{ width: Math.min(width, 460), maxHeight: height * 0.8, backgroundColor: '#1C1C1E', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingVertical: 8 }}>
-            <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 8, fontWeight: '600' }}>{sheet === 'speed' ? 'Playback speed' : sheet === 'audio' ? 'Audio track' : sheet === 'subs' ? 'Subtitles' : sheet === 'more' ? 'More' : 'Sleep timer'}</Text>
+            <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 8, fontWeight: '600' }}>{sheet === 'speed' ? 'Playback speed' : sheet === 'audio' ? 'Audio track' : sheet === 'subs' ? 'Subtitles' : sheet === 'subsearch' ? 'Online subtitles' : sheet === 'more' ? 'More' : 'Sleep timer'}</Text>
             {sheetRows.length === 0 ? <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 20 }}>No tracks in this file</Text> : null}
             {sheetRows.map((r) => (
               <Pressable key={r.key} onPress={r.pick} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 14 }}>

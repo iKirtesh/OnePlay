@@ -28,6 +28,7 @@ export function SharePanel({ onClose }: { onClose: () => void }) {
         {s?.enabled && (
           <div className="share-card">
             <div><small>Address for your phone</small><b>{addr ? `${addr}:${s.port}` : "No network found"}</b></div>
+            {addr && <div><small>Open in any browser on this Wi-Fi</small><b>{`http://${addr}:${s.port}/web`}</b></div>}
             <div><small>Pairing code</small><b className="code">{s.code}</b></div>
             <button className="chip" onClick={() => window.oneplay.shareNewCode().then(setS)}>New code</button>
           </div>

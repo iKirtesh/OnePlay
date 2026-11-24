@@ -5,6 +5,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { app } from "electron";
+import { searchSubs, downloadSubText } from "./extras";
+import { WEB_PLAYER } from "./webplayer";
 
 /**
  * Wi-Fi sharing: lets a paired phone on the same network browse the folders you choose, stream files,
@@ -111,6 +113,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     store.tokens.push(token); code = newCode(); save(); notify();
     return json(res, 200, { token, name: os.hostname() });
   }
+  if (url.pathname === "/web") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }); res.end(WEB_PLAYER); return; }
   const ph = url.pathname.match(/^\/phone\/([0-9a-f]{32})\/([^/]+)\.([A-Za-z0-9]{2,5})$/);
   if (ph) { // opened by the local player, so the per-run local token is enough
     if (ph[1] !== localToken || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip)) return json(res, 403, { error: "Forbidden" });
@@ -118,6 +121,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   }
   if (!authed(req, url)) return json(res, 401, { error: "Not paired" });
   if (url.pathname === "/api/library") { await rescan(url.searchParams.get("refresh") === "1"); return json(res, 200, { folders: tree }); }
+  if (url.pathname === "/api/subs/search") {
+    try { return json(res, 200, await searchSubs(url.searchParams.get("q") ?? "", (url.searchParams.get("lang") ?? "en").slice(0, 8))); } catch (e) { return json(res, 502, { error: (e as Error).message }); }
+  }
+  if (url.pathname === "/api/subs/get") {
+    const id = Number(url.searchParams.get("id"));
+    if (!Number.isInteger(id) || id <= 0) return json(res, 400, { error: "bad id" });
+    try { const r = await downloadSubText(id); res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" }); res.end(r.text); return; } catch (e) { return json(res, 502, { error: (e as Error).message }); }
+  }
   if (url.pathname === "/api/sync") {
     if (req.method === "PUT") {
       try { const inc = JSON.parse(await readBody(req)) as Record<string, Resume>; for (const [k, v] of Object.entries(inc)) if (v && typeof v.pos === "number" && typeof v.at === "number" && (store.sync[k]?.at ?? 0) < v.at) store.sync[k] = { pos: v.pos, dur: Number(v.dur) || 0, at: v.at }; save(); } catch { return json(res, 400, { error: "bad json" }); }

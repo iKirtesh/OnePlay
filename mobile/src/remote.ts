@@ -67,6 +67,19 @@ export async function remoteResume(name: string): Promise<RemoteResume | null> {
   if (!conn) return null;
   try { return (await call<Record<string, RemoteResume>>(conn.host, '/api/sync', { token: conn.token, timeout: 2500 }))[nameKey(name)] ?? null; } catch { return null; }
 }
+export type PcSub = { fileId: number; release: string; language: string; downloads: number };
+const needPc = () => new Error('Pair with your computer first (computer icon on the home screen).');
+/** Searches OpenSubtitles through the computer, which holds the API key. */
+export function searchSubsOnPc(q: string, lang = 'en'): Promise<PcSub[]> {
+  if (!conn) return Promise.reject(needPc());
+  return call<PcSub[]>(conn.host, `/api/subs/search?q=${encodeURIComponent(q)}&lang=${encodeURIComponent(lang)}`, { token: conn.token, timeout: 20000 });
+}
+export async function subsTextFromPc(fileId: number): Promise<string> {
+  if (!conn) throw needPc();
+  const res = await fetch(`http://${conn.host}/api/subs/get?id=${fileId}`, { headers: { Authorization: `Bearer ${conn.token}` } });
+  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `Error ${res.status}`);
+  return res.text();
+}
 /** Every resume position known to the computer, keyed by lower-case name. */
 export async function remoteResumeAll(): Promise<Record<string, RemoteResume>> {
   if (!conn) return {};

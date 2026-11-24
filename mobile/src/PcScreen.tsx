@@ -10,6 +10,7 @@ import { Conn, PcFolder, PcStatus, clearConn, fetchLibrary, fileUrl, loadConn, p
 import { clock } from './theme';
 import { link } from './link';
 import { isPhoneShareOn, setPhoneShare } from './phoneShare';
+import { downloadToPhone } from './offline';
 import { FollowScreen } from './FollowScreen';
 import type { Play } from './Library';
 
@@ -26,6 +27,14 @@ export function PcScreen({ onPlay, onClose, autoFollow }: { onPlay: (p: Play) =>
   const [err, setErr] = useState('');
   const [view, setView] = useState<'browse' | 'remote'>('browse');
   const [sharing, setSharing] = useState(false);
+  const [dl, setDl] = useState<Record<string, number>>({});
+  const save = (i: { id: string; name: string; ext: string }) => {
+    setDl((d) => ({ ...d, [i.id]: 0 }));
+    downloadToPhone(i.id, i.name, i.ext, (f) => setDl((d) => ({ ...d, [i.id]: f })))
+      .then(() => { setNote('Saved to this phone (Movies/OnePlay). Pull to refresh the Library.'); setTimeout(() => setNote(''), 4000); })
+      .catch((e: Error) => setErr(e.message))
+      .finally(() => setDl((d) => { const n = { ...d }; delete n[i.id]; return n; }));
+  };
   useEffect(() => { void isPhoneShareOn().then(setSharing); }, []);
   const [note, setNote] = useState('');
   const [follow, setFollow] = useState(!!autoFollow);
@@ -142,6 +151,7 @@ export function PcScreen({ onPlay, onClose, autoFollow }: { onPlay: (p: Play) =>
                 <Pressable onPress={() => play(open, index)} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 14 }}>
                   <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: t.fill, alignItems: 'center', justifyContent: 'center' }}><Feather name={/^(mp3|flac|wav|aac|ogg|opus|m4a)$/.test(item.ext) ? 'music' : 'film'} size={20} color={t.text2} /></View>
                   <View style={{ flex: 1 }}><Text numberOfLines={2} style={{ color: t.text, fontSize: 15, fontWeight: '500' }}>{item.name}</Text><Text style={{ color: t.text2, fontSize: 12 }}>{item.ext.toUpperCase()}  ·  {size(item.size)}</Text></View>
+                  {dl[item.id] !== undefined ? <Text style={{ color: t.accent, width: 40, textAlign: 'center', fontSize: 12 }}>{Math.round(dl[item.id]! * 100)}%</Text> : <Pressable hitSlop={10} onPress={() => save(item)}><Feather name="download" size={20} color={t.accent} /></Pressable>}
                   <Pressable hitSlop={10} onPress={() => { void pcControl({ cmd: 'playId', id: item.id }).then(() => { setNote('Playing on your computer'); setTimeout(() => setNote(''), 2500); }).catch((e: Error) => setErr(e.message)); }}><Feather name="monitor" size={20} color={t.accent} /></Pressable>
                 </Pressable>
               )} />

@@ -67,7 +67,7 @@ export async function searchSubs(query: string, lang: string): Promise<SubResult
   return (data.data ?? []).flatMap((d: any) => (d.attributes?.files ?? []).slice(0, 1).map((f: any) => ({ fileId: f.file_id, release: d.attributes.release || f.file_name || d.attributes.feature_details?.title || "Subtitle", language: d.attributes.language ?? lang, downloads: d.attributes.download_count ?? 0 }))).slice(0, 30);
 }
 /** Downloads a subtitle next to the video (or in a temp folder if that folder is read-only) and returns its path. */
-export async function downloadSub(fileId: number, videoPath: string, lang: string): Promise<{ path: string; remaining?: number }> {
+export async function downloadSubText(fileId: number): Promise<{ text: string; remaining?: number }> {
   const { apiKey, username, password } = getSubSettings();
   if (!apiKey) throw new Error("Add your OpenSubtitles API key first.");
   if (!username || !password) throw new Error("Downloading needs your OpenSubtitles username and password.");
@@ -75,7 +75,11 @@ export async function downloadSub(fileId: number, videoPath: string, lang: strin
   const base = login.base_url ? `https://${String(login.base_url).replace(/^https?:\/\//, "")}` : "https://api.opensubtitles.com";
   const dl = await osCall(`${base}/api/v1/download`, { key: apiKey, token: login.token, method: "POST", body: JSON.stringify({ file_id: fileId, sub_format: "srt" }) });
   if (!dl.link) throw new Error("OpenSubtitles did not return a file.");
-  const text = await (await fetch(dl.link)).text();
+  return { text: await (await fetch(dl.link)).text(), remaining: dl.remaining };
+}
+export async function downloadSub(fileId: number, videoPath: string, lang: string): Promise<{ path: string; remaining?: number }> {
+  const { text, remaining } = await downloadSubText(fileId);
+  const dl = { remaining };
   const name = `${path.basename(videoPath).replace(/\.[^.]+$/, "")}.${lang || "en"}.srt`;
   let out = path.join(path.dirname(videoPath), name);
   try { fs.writeFileSync(out, text); } catch { out = path.join(os.tmpdir(), name); fs.writeFileSync(out, text); }
