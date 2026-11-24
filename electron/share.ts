@@ -75,7 +75,8 @@ async function rescan(force = false) {
 const json = (res: http.ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
 const readBody = (req: http.IncomingMessage) => new Promise<string>((resolve) => { let b = ""; req.on("data", (c) => { b += c; if (b.length > 2_000_000) req.destroy(); }); req.on("end", () => resolve(b)); });
 const tokenOf = (req: http.IncomingMessage, url: URL) => url.searchParams.get("t") ?? (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-const authed = (req: http.IncomingMessage, url: URL) => { const t = tokenOf(req, url); return !!t && store.tokens.some((x) => x.length === t.length && crypto.timingSafeEqual(Buffer.from(x), Buffer.from(t))); };
+const castToken = crypto.randomBytes(16).toString("hex"); // per run; lets a TV fetch the one file we hand it
+const authed = (req: http.IncomingMessage, url: URL) => { const t = tokenOf(req, url); if (t === castToken && /^\/file\/[0-9a-f]{16}$/.test(url.pathname)) return true; return !!t && store.tokens.some((x) => x.length === t.length && crypto.timingSafeEqual(Buffer.from(x), Buffer.from(t))); };
 
 /** Validates a remote command and passes it to the player. Used by both HTTP and the live connection. */
 async function runCommand(b: Record<string, unknown>): Promise<{ code: number; body: unknown }> {
@@ -315,6 +316,16 @@ async function streamFromPhone(req: http.IncomingMessage, res: http.ServerRespon
 let onChange: (() => void) | null = null;
 const notify = () => onChange?.();
 
+/** A link a TV on this network can open for a file inside a shared folder, or null when the file is not shared. */
+export async function castUrlFor(filePath: string): Promise<{ url: string; mime: string } | null> {
+  if (!server) return null;
+  await rescan(false);
+  const id = idByPath.get(filePath);
+  const addr = addresses()[0];
+  if (!id || !addr) return null;
+  const e = files.get(id);
+  return { url: `http://${addr}:${port}/file/${id}?t=${castToken}`, mime: MIME[(e?.ext ?? "mp4").toLowerCase()] ?? "video/mp4" };
+}
 export function shareState() {
   return { enabled: !!server, port, addresses: addresses(), code, folders: store.folders, devices: store.tokens.length };
 }

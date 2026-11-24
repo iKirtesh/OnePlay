@@ -6,6 +6,7 @@ import os from "node:os";
 import fs from "node:fs";
 import * as share from "./share";
 import * as extras from "./extras";
+import * as cast from "./cast";
 import { mpvCommand, mpvEnv } from "./mpvpath";
 
 let windowRef: BrowserWindow | null = null;
@@ -308,6 +309,18 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("update:check", () => extras.checkUpdate());
   ipcMain.handle("update:open", (_e, url: string) => { extras.openRelease(String(url)); return true; });
+  ipcMain.handle("cast:discover", () => cast.discover());
+  ipcMain.handle("cast:play", async (_e, control: string, filePath: string, title: string) => {
+    try {
+      const target = await share.castUrlFor(filePath);
+      if (!target) return { ok: false, error: "Turn on Wi-Fi sharing and add this video's folder first, so the TV can reach the file." };
+      if (!/^https?:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(control)) return { ok: false, error: "That device is not on your local network." };
+      await cast.castTo(control, target.url, title, target.mime);
+      sendMpv(["set_property", "pause", true]);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: (e as Error).message }; }
+  });
+  ipcMain.handle("cast:stop", async (_e, control: string) => { try { await cast.castStop(control); return true; } catch { return false; } });
   ipcMain.handle("app:get-fill", () => readPrefs().fill !== false);
   ipcMain.handle("app:set-fill", (_e, on: boolean) => { writePrefs({ fill: !!on }); if (!canEmbedNativeWindow()) sendMpv(["set_property", "fullscreen", !!on]); return !!on; });
   ipcMain.handle("app:get-swdec", () => !!readPrefs().swdec);

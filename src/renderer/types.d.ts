@@ -35,6 +35,9 @@ declare global {
       subsDownload: (id: number, video: string, lang: string) => Promise<{ path: string; remaining?: number }>;
       checkUpdate: () => Promise<{ version: string; url: string } | null>;
       openUpdate: (url: string) => Promise<boolean>;
+      castDiscover: () => Promise<{ name: string; control: string; location: string }[]>;
+      castPlay: (control: string, path: string, title: string) => Promise<{ ok: boolean; error?: string }>;
+      castStop: (control: string) => Promise<boolean>;
       getFill: () => Promise<boolean>;
       setFill: (on: boolean) => Promise<boolean>;
       getSwdec: () => Promise<boolean>;

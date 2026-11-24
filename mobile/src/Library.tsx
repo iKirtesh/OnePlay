@@ -6,12 +6,13 @@ import * as DocumentPicker from 'expo-document-picker';
 import { clock, useTheme } from './theme';
 import { Folder, Item, Library as Lib, hasAccess, loadCached, requestAccess, scanLibrary, Access } from './scan';
 import { Thumb } from './Thumb';
+import { Show, groupShows } from './shows';
 import { getJSON, getResume, loadResume, setJSON } from './storage';
 import { remoteResumeAll } from './remote';
 import { checkUpdate } from './update';
 import { Lists, empty, isFav, livePlaylists, loadLists, newId, savePlaylist, setFav, syncLists } from './lists';
 
-type Tab = 'folders' | 'videos' | 'music' | 'favorites';
+type Tab = 'folders' | 'videos' | 'shows' | 'music' | 'favorites';
 type Sort = 'newest' | 'name' | 'longest';
 const SORTS: Sort[] = ['newest', 'name', 'longest'];
 export type Play = { queue: Item[]; index: number };
@@ -23,6 +24,8 @@ export function LibraryScreen({ onPlay, onPc, onLists }: { onPlay: (p: Play) => 
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>('folders');
   const [folder, setFolder] = useState<Folder | null>(null);
+  const [show, setShow] = useState<Show | null>(null);
+  const shows = useMemo(() => (lib ? groupShows(lib.items) : []), [lib]);
   const [q, setQ] = useState('');
   const [, bump] = useState(0);
   const [lists, setLists] = useState<Lists>(empty());
@@ -154,6 +157,31 @@ export function LibraryScreen({ onPlay, onPc, onLists }: { onPlay: (p: Play) => 
     );
   } else if (!lib) {
     body = <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}><ActivityIndicator color={t.accent} /><Text style={{ color: t.text2 }}>Scanning your folders…</Text></View>;
+  } else if (tab === 'shows' && !folder) {
+    if (!show) {
+      const shown = shows.filter((s) => !needle || s.name.toLowerCase().includes(needle));
+      body = (
+        <FlatList data={shown} keyExtractor={(s) => s.name} ListEmptyComponent={<Text style={{ color: t.text2, textAlign: 'center', marginTop: 60, paddingHorizontal: 30 }}>No TV shows found. Files named like "Show.Name.S01E02.mkv" are grouped here.</Text>}
+          renderItem={({ item: s }) => (
+            <Pressable onPress={() => setShow(s)} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, gap: 12 }}>
+              <Thumb item={s.cover} size={{ w: 72, h: 100 }} bg={t.fill} color={t.text2} radius={10} />
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={2} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{s.name}</Text>
+                <Text style={{ color: t.text2, fontSize: 12, marginTop: 2 }}>{s.seasons.length} {s.seasons.length === 1 ? 'season' : 'seasons'}  ·  {s.count} episodes</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={t.text2} />
+            </Pressable>
+          )} />
+      );
+    } else {
+      const all = show.seasons.flatMap((x) => x.episodes.map((e) => e.item));
+      type SRow = { h: string } | { i: Item };
+      const srows: SRow[] = show.seasons.flatMap((x) => [{ h: `SEASON ${x.season}` } as SRow, ...x.episodes.map((e) => ({ i: e.item }) as SRow)]);
+      body = (
+        <FlatList data={srows} keyExtractor={(r, n) => ('h' in r ? 'h' + r.h : r.i.id) + n}
+          renderItem={({ item: r }) => ('h' in r ? <Text style={{ color: t.text2, fontSize: 13, fontWeight: '600', padding: 16, paddingBottom: 6 }}>{r.h}</Text> : row(r.i, all))} />
+      );
+    }
   } else if (!folder && tab === 'folders') {
     type Row = { t: 'f'; f: Folder } | { t: 'h'; title: string } | { t: 'i'; i: Item };
     const files = (lib?.items ?? []).filter((i) => !needle || i.name.toLowerCase().includes(needle));
@@ -183,8 +211,8 @@ export function LibraryScreen({ onPlay, onPc, onLists }: { onPlay: (p: Play) => 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, gap: 10 }}>
-        {folder ? <Pressable onPress={() => setFolder(null)} hitSlop={10}><Feather name="chevron-left" size={26} color={t.accent} /></Pressable> : null}
-        <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: folder ? 20 : 30, fontWeight: '700' }}>{folder ? folder.name : 'OnePlay'}</Text>
+        {folder || (tab === 'shows' && show) ? <Pressable onPress={() => (folder ? setFolder(null) : setShow(null))} hitSlop={10}><Feather name="chevron-left" size={26} color={t.accent} /></Pressable> : null}
+        <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: folder || (tab === 'shows' && show) ? 20 : 30, fontWeight: '700' }}>{folder ? folder.name : tab === 'shows' && show ? show.name : 'OnePlay'}</Text>
         <Pressable onPress={nextSort} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Feather name="sliders" size={18} color={t.accent} /><Text style={{ color: t.accent, fontSize: 12 }}>{sort}</Text></Pressable>
         {!folder && hidden.length ? <Pressable onPress={() => setShowHidden((v) => !v)} hitSlop={10}><Feather name={showHidden ? 'eye' : 'eye-off'} size={20} color={t.accent} /></Pressable> : null}
         {onLists ? <Pressable onPress={onLists} hitSlop={10}><Feather name="list" size={22} color={t.accent} /></Pressable> : null}
@@ -200,9 +228,9 @@ export function LibraryScreen({ onPlay, onPc, onLists }: { onPlay: (p: Play) => 
           </View>
           {!folder ? (
             <View style={{ flexDirection: 'row', backgroundColor: t.fill, borderRadius: 10, padding: 2 }}>
-              {(['folders', 'videos', 'music', 'favorites'] as Tab[]).map((k) => (
-                <Pressable key={k} onPress={() => setTab(k)} style={{ flex: 1, paddingVertical: 6, borderRadius: 8, alignItems: 'center', backgroundColor: tab === k ? t.panel : 'transparent' }}>
-                  <Text style={{ color: t.text, fontSize: 13, fontWeight: tab === k ? '600' : '400', textTransform: 'capitalize' }}>{k}</Text>
+              {(['folders', 'videos', 'shows', 'music', 'favorites'] as Tab[]).map((k) => (
+                <Pressable key={k} onPress={() => { setTab(k); setShow(null); }} style={{ flex: 1, paddingVertical: 6, borderRadius: 8, alignItems: 'center', backgroundColor: tab === k ? t.panel : 'transparent' }}>
+                  <Text style={{ color: t.text, fontSize: 12, fontWeight: tab === k ? '600' : '400', textTransform: 'capitalize' }}>{k}</Text>
                 </Pressable>
               ))}
             </View>
