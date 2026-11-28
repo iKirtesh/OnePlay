@@ -27,8 +27,28 @@ const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
 const SLEEP = [0, 15, 30, 45, 60, 90];
 const FITS = ['contain', 'cover', 'fill'] as const;
 const FIT_LABEL = { contain: 'Fit', cover: 'Fill screen', fill: 'Stretch' } as const;
-type Sheet = null | 'speed' | 'audio' | 'subs' | 'sleep' | 'more' | 'subsearch';
+type Sheet = null | 'speed' | 'audio' | 'subs' | 'sleep' | 'more' | 'settings' | 'subsearch';
 type Track = { id: string; label: string; language: string } | null;
+
+/** Vertical level bar (brightness or volume): drag up or down. */
+function VBar({ value, onChange, icon }: { value: number; onChange: (v: number) => void; icon: React.ComponentProps<typeof Feather>['name'] }) {
+  const H = 110;
+  const cur = useRef(value); cur.current = value;
+  const base = useRef(0);
+  const pr = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true, onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => { base.current = cur.current; },
+    onPanResponderMove: (_e, s) => onChange(Math.max(0, Math.min(1, base.current - s.dy / H))),
+  }), [onChange]);
+  return (
+    <View style={{ width: 48, height: 170, borderRadius: 24, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', paddingVertical: 12, gap: 10 }}>
+      <Feather name={icon} size={20} color="#fff" />
+      <View {...pr.panHandlers} style={{ flex: 1, width: 30, alignItems: 'center' }}>
+        <View style={{ flex: 1, width: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.28)', overflow: 'hidden', justifyContent: 'flex-end' }} pointerEvents="none"><View style={{ height: `${Math.round(value * 100)}%`, backgroundColor: '#0A84FF' }} /></View>
+      </View>
+    </View>
+  );
+}
 
 export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { queue: Item[]; index: number; onClose: () => void; onVlc?: (i: Item) => void; sync?: boolean }) {
   const { width, height } = useWindowDimensions();
@@ -42,6 +62,10 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
   const [locked, setLocked] = useState(false);
   const [fit, setFit] = useState<(typeof FITS)[number]>('contain');
   const [speed, setSpeed] = useState(1);
+  const [bright, setBright] = useState(0.5);
+  const [vol, setVol] = useState(1);
+  useEffect(() => { void Brightness.getBrightnessAsync().then(setBright).catch(() => {}); }, []);
+  const changeBright = useCallback((v: number) => { const b = Math.max(0.02, v); setBright(b); void Brightness.setBrightnessAsync(b).catch(() => {}); }, []);
   const [loop, setLoop] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [audioTracks, setAudioTracks] = useState<NonNullable<Track>[]>([]);
@@ -180,8 +204,8 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
         else { st.mode = 'vol'; st.base = player.volume; }
       }
       if (st.mode === 'seek') { const t = Math.max(0, Math.min(live.current.dur || 1e9, st.base + s.dx / 6)); st.start = t; flash(s.dx > 0 ? 'fast-forward' : 'rewind', `${clock(t)}  (${s.dx > 0 ? '+' : '-'}${Math.round(Math.abs(t - st.base))}s)`); }
-      else if (st.mode === 'bright') { const v = Math.max(0.02, Math.min(1, st.base - s.dy / (h * 0.8))); void Brightness.setBrightnessAsync(v).catch(() => {}); flash('sun', `${Math.round(v * 100)}%`); }
-      else if (st.mode === 'vol') { const v = Math.max(0, Math.min(1, st.base - s.dy / (h * 0.8))); player.volume = v; flash(v === 0 ? 'volume-x' : 'volume-2', `${Math.round(v * 100)}%`); }
+      else if (st.mode === 'bright') { const v = Math.max(0.02, Math.min(1, st.base - s.dy / (h * 0.8))); setBright(v); void Brightness.setBrightnessAsync(v).catch(() => {}); flash('sun', `${Math.round(v * 100)}%`); }
+      else if (st.mode === 'vol') { const v = Math.max(0, Math.min(1, st.base - s.dy / (h * 0.8))); player.volume = v; setVol(v); flash(v === 0 ? 'volume-x' : 'volume-2', `${Math.round(v * 100)}%`); }
     },
     onPanResponderRelease: (e, s) => {
       const st = g.current;
@@ -218,11 +242,6 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
     else if (ab.b == null && t > ab.a) { setAb({ a: ab.a, b: t }); flash('repeat', `A-B ${clock(ab.a)} - ${clock(t)}`); }
     else { setAb({ a: null, b: null }); flash('repeat', 'A-B off'); }
   };
-  const rotate = async () => {
-    const o = await ScreenOrientation.getOrientationAsync();
-    const portrait = o === ScreenOrientation.Orientation.PORTRAIT_UP || o === ScreenOrientation.Orientation.PORTRAIT_DOWN;
-    await ScreenOrientation.lockAsync(portrait ? ScreenOrientation.OrientationLock.LANDSCAPE : ScreenOrientation.OrientationLock.PORTRAIT_UP);
-  };
   const pickAudio = (id: string | null) => { const t = audioTracks.find((x) => x.id === id); if (t) { player.audioTrack = t as never; setAudioSel(t.id); } setSheet(null); };
   const pickSub = (id: string | null) => { const t = subTracks.find((x) => x.id === id) ?? null; player.subtitleTrack = t as never; setSubSel(t?.id ?? null); setSheet(null); };
   const trackName = (t: NonNullable<Track>, i: number) => [t.label || `Track ${i + 1}`, t.language && t.language !== t.label ? `(${t.language})` : ''].filter(Boolean).join(' ');
@@ -235,20 +254,20 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
     sheet === 'speed' ? SPEEDS.map((r) => ({ key: String(r), label: `${r}x`, on: r === speed, pick: () => { setRate(r); setSheet(null); } }))
     : sheet === 'sleep' ? SLEEP.map((m) => ({ key: String(m), label: m ? `${m} minutes` : 'Off', on: m === sleepLeft || (!m && !sleepLeft), pick: () => { setSleepLeft(m); setSheet(null); if (m) flash('moon', `Sleep in ${m} min`); } }))
     : sheet === 'audio' ? audioTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === audioSel, pick: () => pickAudio(t.id) }))
-    : sheet === 'more' ? [
+    : sheet === 'settings' ? [
         ...(audioTracks.length > 1 ? [{ key: 'audio', label: 'Audio track…', on: false, pick: () => setSheet('audio') }] : []),
-        { key: 'fit', label: `Aspect: ${FIT_LABEL[fit]} (tap to change)`, on: fit !== 'contain', pick: () => { const n = FITS[(FITS.indexOf(fit) + 1) % FITS.length] ?? 'contain'; setFit(n); flash('maximize', FIT_LABEL[n]); setSheet(null); } },
         { key: 'loop', label: loop ? 'Repeat: on' : 'Repeat: off', on: loop, pick: () => { player.loop = !loop; setLoop(!loop); flash('repeat', !loop ? 'Repeat on' : 'Repeat off'); setSheet(null); } },
         { key: 'sleep', label: sleepLeft > 0 ? `Sleep timer: ${sleepLeft} min left` : 'Sleep timer…', on: sleepLeft > 0, pick: () => setSheet('sleep') },
-        { key: 'pip', label: 'Picture in picture', on: false, pick: () => { setSheet(null); void viewRef.current?.startPictureInPicture(); } },
-        ...(onVlc && item ? [{ key: 'vlc', label: 'Play with VLC engine (more formats)', on: false, pick: () => { player.pause(); onVlc(item); } }] : []),
-        { key: 'ab', label: ab.a == null ? 'A-B repeat: set start' : ab.b == null ? 'A-B repeat: set end' : 'A-B repeat: clear', on: ab.a != null, pick: () => { markAb(); setSheet(null); } },
-        { key: 'fb', label: 'Previous frame', on: false, pick: () => step(-1) },
-        { key: 'ff', label: 'Next frame', on: false, pick: () => step(1) },
         { key: 'd-', label: `Subtitle delay -0.5s (${subDelay.toFixed(1)}s)`, on: false, pick: () => setSubDelay((d) => d - 0.5) },
         { key: 'd+', label: `Subtitle delay +0.5s (${subDelay.toFixed(1)}s)`, on: false, pick: () => setSubDelay((d) => d + 0.5) },
         { key: 's-', label: 'Subtitle text smaller', on: false, pick: () => setSubSize((z) => Math.max(10, z - 2)) },
         { key: 's+', label: 'Subtitle text larger', on: false, pick: () => setSubSize((z) => Math.min(40, z + 2)) },
+      ]
+    : sheet === 'more' ? [
+        { key: 'ab', label: ab.a == null ? 'A-B repeat: set start' : ab.b == null ? 'A-B repeat: set end' : 'A-B repeat: clear', on: ab.a != null, pick: () => { markAb(); setSheet(null); } },
+        { key: 'fb', label: 'Previous frame', on: false, pick: () => step(-1) },
+        { key: 'ff', label: 'Next frame', on: false, pick: () => step(1) },
+        ...(onVlc && item ? [{ key: 'vlc', label: 'Play with VLC engine (more formats)', on: false, pick: () => { player.pause(); onVlc(item); } }] : []),
       ]
     : sheet === 'subsearch' ? (typeof hits === 'string' ? [{ key: 'msg', label: hits, on: false, pick: () => setSheet('subs') }] : hits === null ? [{ key: 'wait', label: 'Searching…', on: false, pick: () => {} }] : hits.slice(0, 15).map((h) => ({ key: String(h.fileId), label: `${h.release}  ·  ${h.language}`, on: false, pick: () => useHit(h) })))
     : sheet === 'subs' ? [{ key: 'off', label: 'Off', on: !subSel && cues.length === 0, pick: () => { pickSub(null); setCues([]); } }, { key: 'online', label: 'Search online (uses your computer)…', on: false, pick: searchOnline }, { key: 'file', label: 'Load subtitle file (.srt / .vtt)…', on: cues.length > 0, pick: () => void loadSubFile() }, ...subTracks.map((t, i) => ({ key: t.id, label: trackName(t, i), on: t.id === subSel, pick: () => pickSub(t.id) }))]
@@ -276,28 +295,39 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
 
       {shown ? (
         <>
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: 24, paddingHorizontal: 8, paddingBottom: 10, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row', alignItems: 'center' }}>
-            {btn('chevron-down', onClose, 28)}
-            <View style={{ flex: 1 }}><Text numberOfLines={1} style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{item.name}</Text>{syncOn ? <Text style={{ color: '#7FD1FF', fontSize: 12 }}>Watching together with your computer</Text> : queue.length > 1 ? <Text style={{ color: '#ccc', fontSize: 12 }}>{index + 1} / {queue.length}</Text> : null}</View>
-            {btn('lock', () => setLocked(true))}
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: 14, paddingHorizontal: 12, paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            {btn('chevron-left', onClose, 28)}
+            <View style={{ flex: 1 }}><Text numberOfLines={1} style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{item.name}</Text>{syncOn ? <Text style={{ color: '#7FD1FF', fontSize: 12 }}>Watching together with your computer</Text> : queue.length > 1 ? <Text style={{ color: '#D0D0D5', fontSize: 12 }}>{index + 1} / {queue.length}</Text> : null}</View>
+            <Pressable onPress={() => { setSheet('speed'); poke(); }} style={{ height: 34, paddingHorizontal: 14, borderRadius: 17, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center' }}><Text style={{ color: speed === 1 ? '#fff' : '#0A84FF', fontWeight: '600' }}>{speed}x</Text></Pressable>
+            {btn('type', () => setSheet('subs'), 22, !!subSel || cues.length > 0)}
+            {btn('settings', () => setSheet('settings'), 22, loop || sleepLeft > 0 || audioTracks.length > 1)}
+            {btn('more-vertical', () => setSheet('more'), 22, ab.a != null)}
           </View>
-          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', paddingBottom: 12, paddingHorizontal: 12, paddingTop: 4 }}>
+          <View style={{ position: 'absolute', left: 14, top: Math.max(70, height / 2 - 100) }}><VBar value={bright} onChange={changeBright} icon="sun" /></View>
+          <View style={{ position: 'absolute', right: 14, top: Math.max(70, height / 2 - 100) }}><VBar value={vol} onChange={(v) => { player.volume = v; setVol(v); }} icon={vol === 0 ? 'volume-x' : 'volume-2'} /></View>
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', paddingBottom: 10, paddingHorizontal: 14, paddingTop: 2 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Text style={{ color: '#fff', fontSize: 12, width: 52, textAlign: 'center' }}>{clock(scrub ?? pos)}</Text>
-              <Slider style={{ flex: 1, height: 36 }} minimumValue={0} maximumValue={Math.max(dur, 1)} value={scrub ?? pos} minimumTrackTintColor="#0A84FF" maximumTrackTintColor="rgba(255,255,255,0.3)" thumbTintColor="#fff"
+              <Slider style={{ flex: 1, height: 32 }} minimumValue={0} maximumValue={Math.max(dur, 1)} value={scrub ?? pos} minimumTrackTintColor="#0A84FF" maximumTrackTintColor="rgba(255,255,255,0.3)" thumbTintColor="#fff"
                 onSlidingStart={() => { if (hideTimer.current) clearTimeout(hideTimer.current); }} onValueChange={(v) => setScrub(v)} onSlidingComplete={(v) => { seekTo(v); setScrub(null); poke(); }} />
-              <Text style={{ color: '#fff', fontSize: 12, width: 52, textAlign: 'center' }}>-{clock(Math.max(0, dur - pos))}</Text>
+              <Text style={{ color: '#fff', fontSize: 12, width: 56, textAlign: 'center' }}>-{clock(Math.max(0, dur - pos))}</Text>
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-              <View style={{ flex: 1, alignItems: 'flex-start' }}><Pressable onPress={() => { setSheet('speed'); poke(); }} style={{ padding: 8 }}><Text style={{ color: speed === 1 ? '#fff' : '#0A84FF', fontWeight: '600' }}>{speed}x</Text></Pressable></View>
-              {btn('skip-back', () => go(-1), 24)}
-              {btn('rotate-ccw', () => skip(-10), 24)}
-              <Pressable onPress={() => { toggle(); poke(); }} style={{ padding: 10 }}><Feather name={playing ? 'pause' : 'play'} size={38} color="#fff" /></Pressable>
-              {btn('rotate-cw', () => skip(10), 24)}
-              {btn('skip-forward', () => go(1), 24)}
-              <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end' }}>
-                {btn('type', () => setSheet('subs'), 20, !!subSel || cues.length > 0)}
-                {btn('more-horizontal', () => setSheet('more'), 22, ab.a != null || loop || sleepLeft > 0 || fit !== 'contain' || audioTracks.length > 1)}
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ flex: 1, flexDirection: 'row' }}>
+                <Pressable onPress={() => { const n = FITS[(FITS.indexOf(fit) + 1) % FITS.length] ?? 'contain'; setFit(n); flash('maximize', FIT_LABEL[n]); poke(); }} style={{ height: 40, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather name="maximize" size={16} color="#fff" /><Text style={{ color: '#fff', fontWeight: '600' }}>{FIT_LABEL[fit]}</Text>
+                </Pressable>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {btn('skip-back', () => go(-1), 22)}
+                {btn('rotate-ccw', () => skip(-10), 26)}
+                <Pressable onPress={() => { toggle(); poke(); }} style={{ padding: 8 }}><Feather name={playing ? 'pause' : 'play'} size={36} color="#fff" /></Pressable>
+                {btn('rotate-cw', () => skip(10), 26)}
+                {btn('skip-forward', () => go(1), 22)}
+              </View>
+              <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+                {btn('layers', () => { void viewRef.current?.startPictureInPicture(); }, 20)}
+                {btn('lock', () => setLocked(true), 20)}
               </View>
             </View>
           </View>
@@ -307,7 +337,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
       <Modal visible={sheet !== null} transparent animationType="fade" onRequestClose={() => setSheet(null)}>
         <Pressable onPress={() => setSheet(null)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', alignItems: 'center' }}>
           <View style={{ width: Math.min(width, 460), maxHeight: height * 0.8, backgroundColor: '#1C1C1E', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingVertical: 8 }}>
-            <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 8, fontWeight: '600' }}>{sheet === 'speed' ? 'Playback speed' : sheet === 'audio' ? 'Audio track' : sheet === 'subs' ? 'Subtitles' : sheet === 'subsearch' ? 'Online subtitles' : sheet === 'more' ? 'More' : 'Sleep timer'}</Text>
+            <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 8, fontWeight: '600' }}>{sheet === 'speed' ? 'Playback speed' : sheet === 'audio' ? 'Audio track' : sheet === 'subs' ? 'Subtitles' : sheet === 'settings' ? 'Settings' : sheet === 'subsearch' ? 'Online subtitles' : sheet === 'more' ? 'More' : 'Sleep timer'}</Text>
             {sheetRows.length === 0 ? <Text style={{ color: '#A1A1A6', textAlign: 'center', padding: 20 }}>No tracks in this file</Text> : null}
             {sheetRows.map((r) => (
               <Pressable key={r.key} onPress={r.pick} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 14 }}>

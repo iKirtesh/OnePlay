@@ -56,7 +56,7 @@ A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 - **Remote control:** play, pause, seek and change volume on your computer from the phone, updated live, or send a video to the computer to play.
 - **TV shows:** a Shows tab on the phone groups files named like `Show.Name.S01E02` by show and season, using a frame from the first episode as the cover.
 - **Cast to TV:** the Cast button on the computer sends the current video to a DLNA smart TV or speaker on the same Wi-Fi. The video's folder must be shared.
-- **Cleaner phone player:** only the essentials stay on screen (seek bar, transport, speed, subtitles, a More menu). It rotates automatically with the phone.
+- **Phone player layout:** top bar with speed, subtitles, settings and a menu; brightness and volume bars on the sides; aspect, transport, picture-in-picture and lock along the bottom. Each control lives in one place, and the screen rotates automatically.
 - **Full-screen video on the computer:** videos fill the screen and mpv's controls appear when you move the mouse. The Maximize button in the top bar switches this off.
 - **Subtitles on the phone:** in the player's subtitle menu choose *Search online*. It searches through your computer's OpenSubtitles key, so set that up on the computer first.
 - **Save to phone:** the download icon beside a computer file copies it into Movies/OnePlay for offline viewing.
