@@ -47,6 +47,7 @@ declare global {
       seekBy: (d: number) => Promise<boolean>;
       setTrack: (kind: "sub" | "audio", id: number | null) => Promise<boolean>;
       setAspect: (mode: string) => Promise<boolean>;
+      setRecord: (url: string) => Promise<boolean>;
       getFill: () => Promise<boolean>;
       setFill: (on: boolean) => Promise<boolean>;
       getSwdec: () => Promise<boolean>;

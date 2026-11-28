@@ -11,6 +11,7 @@ import { clock } from './theme';
 import { link } from './link';
 import { isPhoneShareOn, setPhoneShare } from './phoneShare';
 import { downloadToPhone } from './offline';
+import { getJSON, setJSON } from './storage';
 import { FollowScreen } from './FollowScreen';
 import type { Play } from './Library';
 
@@ -28,6 +29,8 @@ export function PcScreen({ onPlay, onClose, autoFollow }: { onPlay: (p: Play) =>
   const [view, setView] = useState<'browse' | 'remote'>('browse');
   const [sharing, setSharing] = useState(false);
   const [dl, setDl] = useState<Record<string, number>>({});
+  const [saveWhile, setSaveWhile] = useState(false);
+  useEffect(() => { void getJSON<boolean>('oneplay.saveWhile', false).then(setSaveWhile); }, []);
   const save = (i: { id: string; name: string; ext: string }) => {
     setDl((d) => ({ ...d, [i.id]: 0 }));
     downloadToPhone(i.id, i.name, i.ext, (f) => setDl((d) => ({ ...d, [i.id]: f })))
@@ -71,6 +74,8 @@ export function PcScreen({ onPlay, onClose, autoFollow }: { onPlay: (p: Play) =>
     catch (e) { setErr((e as Error).message); setBusy(false); }
   };
   const play = (f: PcFolder, index: number) => {
+    const it = f.items[index];
+    if (saveWhile && it && dl[it.id] === undefined) save(it); // watch now, copy to the phone in the background
     const queue: Item[] = f.items.map((i) => ({ id: i.id, uri: fileUrl(i.id), name: i.name, kind: /^(mp3|flac|wav|aac|ogg|opus|m4a)$/.test(i.ext) ? 'audio' : 'video', duration: 0, folderId: f.id, added: 0 }));
     onPlay({ queue, index });
   };
@@ -98,6 +103,12 @@ export function PcScreen({ onPlay, onClose, autoFollow }: { onPlay: (p: Play) =>
         {conn && !open ? <Pressable onPress={() => void load(true)} hitSlop={10}><Feather name="refresh-cw" size={20} color={t.accent} /></Pressable> : null}
         {conn && !open ? <Pressable onPress={() => { void clearConn().then(() => { setConn(null); setFolders([]); }); }} hitSlop={10}><Feather name="log-out" size={20} color={t.accent} /></Pressable> : null}
       </View>
+      {conn && !open ? (
+        <Pressable onPress={() => { const v = !saveWhile; setSaveWhile(v); setJSON('oneplay.saveWhile', v); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginBottom: 8 }}>
+          <Feather name={saveWhile ? 'check-square' : 'square'} size={20} color={t.accent} />
+          <Text style={{ color: t.text, flex: 1 }}>Save a copy while watching</Text>
+        </Pressable>
+      ) : null}
       {conn && !open ? (
         <View style={{ flexDirection: 'row', marginHorizontal: 16, marginBottom: 8, backgroundColor: t.fill, borderRadius: 10, padding: 2 }}>
           {(['browse', 'remote'] as const).map((k) => (

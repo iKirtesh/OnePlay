@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld("oneplay", {
   seekBy: (d: number) => ipcRenderer.invoke("player:seek-by", d),
   setTrack: (kind: "sub" | "audio", id: number | null) => ipcRenderer.invoke("player:set-track", kind, id),
   setAspect: (mode: string) => ipcRenderer.invoke("player:set-aspect", mode),
+  setRecord: (url: string) => ipcRenderer.invoke("player:set-record", url),
   getFill: () => ipcRenderer.invoke("app:get-fill"),
   setFill: (on: boolean) => ipcRenderer.invoke("app:set-fill", on),
   getSwdec: () => ipcRenderer.invoke("app:get-swdec"),

@@ -62,6 +62,7 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
   const [locked, setLocked] = useState(false);
   const [fit, setFit] = useState<(typeof FITS)[number]>('contain');
   const [speed, setSpeed] = useState(1);
+  const [autoRot, setAutoRot] = useState(true);
   const [bright, setBright] = useState(0.5);
   const [vol, setVol] = useState(1);
   useEffect(() => { void Brightness.getBrightnessAsync().then(setBright).catch(() => {}); }, []);
@@ -235,6 +236,20 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
     try { const c = await readSubs(r.assets[0].uri); if (!c.length) throw new Error('empty'); setCues(c); setSubSel(null); flash('type', `${c.length} lines loaded`); }
     catch { flash('alert-circle', 'Not a valid .srt/.vtt'); }
   };
+  const rotateNow = async () => {
+    const o = await ScreenOrientation.getOrientationAsync();
+    const portrait = o === ScreenOrientation.Orientation.PORTRAIT_UP || o === ScreenOrientation.Orientation.PORTRAIT_DOWN;
+    await ScreenOrientation.lockAsync(portrait ? ScreenOrientation.OrientationLock.LANDSCAPE : ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    setAutoRot(false); flash('smartphone', 'Rotation locked');
+  };
+  const toggleAutoRot = async () => {
+    if (autoRot) {
+      const o = await ScreenOrientation.getOrientationAsync();
+      const portrait = o === ScreenOrientation.Orientation.PORTRAIT_UP || o === ScreenOrientation.Orientation.PORTRAIT_DOWN;
+      await ScreenOrientation.lockAsync(portrait ? ScreenOrientation.OrientationLock.PORTRAIT_UP : ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+      setAutoRot(false); flash('smartphone', 'Rotation locked');
+    } else { await ScreenOrientation.unlockAsync().catch(() => {}); setAutoRot(true); flash('smartphone', 'Auto-rotate on'); }
+  };
   const step = (d: number) => { player.pause(); seekTo(live.current.pos + d * 0.042); };
   const markAb = () => {
     const t = live.current.pos;
@@ -326,6 +341,8 @@ export function PlayerScreen({ queue, index: start, onClose, onVlc, sync }: { qu
                 {btn('skip-forward', () => go(1), 22)}
               </View>
               <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+                {btn('smartphone', () => void toggleAutoRot(), 20, autoRot)}
+                {btn('rotate-cw', () => void rotateNow(), 20)}
                 {btn('layers', () => { void viewRef.current?.startPictureInPicture(); }, 20)}
                 {btn('lock', () => setLocked(true), 20)}
               </View>

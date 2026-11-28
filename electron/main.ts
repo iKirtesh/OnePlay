@@ -66,6 +66,7 @@ function armWatchdog() {
     sendStatus({ event: "swdec", value: true });
   }, 4500);
 }
+let pendingRecord: string | null = null;
 const latest: Record<string, unknown> = {};
 function sendStatus(status: Record<string, unknown>) {
   if (status.event === "property-change" && typeof status.name === "string") latest[status.name] = status.data;
@@ -292,6 +293,15 @@ app.whenReady().then(() => {
       if (/\.(mp3|flac|wav|aac|ogg|opus|m4a)$/i.test(filePath)) videoHost.hide();
       else { videoHost.showInactive(); updateVideoHostBounds(); }
     }
+    if (/^https?:\/\//i.test(filePath) && pendingRecord === filePath) {
+      const dir = path.join(app.getPath("videos"), "OnePlay");
+      try { fs.mkdirSync(dir, { recursive: true }); } catch { /* falls back to no copy */ }
+      const base = decodeURIComponent(filePath.split("?")[0]!.split("/").pop() || "video").replace(/[\\/:*?"<>|]/g, "_").slice(0, 120);
+      const dest = path.join(dir, /\.\w{2,4}$/.test(base) ? base : `${base || "video"}.mp4`);
+      sendMpv(["set_property", "stream-record", dest]);
+      sendStatus({ event: "info", message: `Saving a copy to ${dest}` });
+    } else sendMpv(["set_property", "stream-record", ""]);
+    pendingRecord = null;
     isVideo = !/\.(mp3|flac|wav|aac|ogg|opus|m4a)$/i.test(filePath);
     if (!isVideo) hideOverlay(); else if (latest.fullscreen) showOverlay();
     armWatchdog();
@@ -394,6 +404,7 @@ app.whenReady().then(() => {
   ipcMain.handle("share:get-resume", (_e, key: string) => share.getResume(String(key).toLowerCase()) ?? null);
   ipcMain.handle("open:take", () => { const q = queuedOpen; queuedOpen = []; return q; });
   ipcMain.handle("player:stop", () => { hideOverlay(); sendMpv(["stop"]); return true; });
+  ipcMain.handle("player:set-record", (_e, url: string) => { pendingRecord = String(url); return true; });
   ipcMain.handle("overlay:state", () => ({ ...latest }));
   ipcMain.handle("overlay:interactive", (_e, on: boolean) => { overlay?.setIgnoreMouseEvents(!on, { forward: true }); return true; });
   ipcMain.handle("overlay:back", () => { sendMpv(["set_property", "fullscreen", false]); hideOverlay(); windowRef?.show(); windowRef?.focus(); return true; });

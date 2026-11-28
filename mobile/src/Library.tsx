@@ -10,6 +10,7 @@ import { Show, groupShows } from './shows';
 import { getJSON, getResume, loadResume, setJSON } from './storage';
 import { remoteResumeAll } from './remote';
 import { checkUpdate } from './update';
+import { downloadUrlToPhone } from './offline';
 import { Lists, empty, isFav, livePlaylists, loadLists, newId, savePlaylist, setFav, syncLists } from './lists';
 
 type Tab = 'folders' | 'videos' | 'shows' | 'music' | 'favorites';
@@ -36,6 +37,8 @@ export function LibraryScreen({ onPlay, onPc, onLists }: { onPlay: (p: Play) => 
   const [showHidden, setShowHidden] = useState(false);
   const [sort, setSort] = useState<Sort>('newest');
   const [urlOpen, setUrlOpen] = useState(false);
+  const [saveCopy, setSaveCopy] = useState(false);
+  const [saveNote, setSaveNote] = useState('');
   const [url, setUrl] = useState('');
   const [streams, setStreams] = useState<string[]>([]);
   const [update, setUpdate] = useState<{ tag: string; url: string } | null>(null);
@@ -60,6 +63,11 @@ export function LibraryScreen({ onPlay, onPc, onLists }: { onPlay: (p: Play) => 
     if (!/^https?:\/\//i.test(clean)) return;
     const n = [clean, ...streams.filter((x) => x !== clean)].slice(0, 8);
     setStreams(n); setJSON('oneplay.streams', n); setUrlOpen(false); setUrl('');
+    if (saveCopy) { // watch now, save a copy in the background
+      const nm = decodeURIComponent(clean.split('?')[0]!.split('/').pop() || 'video'); const ext = /\.(\w{2,4})$/.exec(nm)?.[1] ?? 'mp4';
+      setSaveNote('Saving a copy… 0%');
+      downloadUrlToPhone(clean, nm, ext, (f) => setSaveNote(`Saving a copy… ${Math.round(f * 100)}%`)).then(() => { setSaveNote('Saved to Movies/OnePlay. Pull down to refresh.'); setTimeout(() => setSaveNote(''), 5000); }).catch((e: Error) => setSaveNote(e.message));
+    }
     onPlay({ queue: [{ id: 'u' + Date.now(), uri: clean, name: decodeURIComponent(clean.split('?')[0]!.split('/').pop() || clean), kind: /\.(mp3|m4a|aac|flac|ogg|wav)$/i.test(clean.split('?')[0]!) ? 'audio' : 'video', duration: 0, folderId: 'stream', added: Date.now() }], index: 0 });
   };
   const sortItems = (a: Item[]) => [...a].sort((x, y) => (sort === 'name' ? x.name.localeCompare(y.name, undefined, { numeric: true, sensitivity: 'base' }) : sort === 'longest' ? y.duration - x.duration : y.added - x.added));
@@ -237,6 +245,7 @@ export function LibraryScreen({ onPlay, onPc, onLists }: { onPlay: (p: Play) => 
           ) : null}
         </View>
       ) : null}
+      {saveNote ? <Text style={{ color: t.accent, paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 }}>{saveNote}</Text> : null}
       {update ? (
         <Pressable onPress={() => void Linking.openURL(update.url)} style={{ marginHorizontal: 16, marginBottom: 6, padding: 10, borderRadius: 10, backgroundColor: t.accent, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Feather name="download" size={16} color="#fff" /><Text style={{ color: '#fff', flex: 1 }}>New OnePlay {update.tag} is available. Tap to download.</Text>
@@ -270,6 +279,7 @@ export function LibraryScreen({ onPlay, onPc, onLists }: { onPlay: (p: Play) => 
             <Text style={{ color: t.text, fontSize: 17, fontWeight: '600' }}>Play from network</Text>
             <TextInput value={url} onChangeText={setUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://example.com/video.mp4 or .m3u8" placeholderTextColor={t.text2} style={{ color: t.text, backgroundColor: t.fill, borderRadius: 10, padding: 10 }} onSubmitEditing={() => playUrl(url)} />
             {streams.map((u) => <Pressable key={u} onPress={() => playUrl(u)}><Text numberOfLines={1} style={{ color: t.accent, fontSize: 13 }}>{u}</Text></Pressable>)}
+            <Pressable onPress={() => setSaveCopy((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Feather name={saveCopy ? 'check-square' : 'square'} size={18} color={t.accent} /><Text style={{ color: t.text, fontSize: 14 }}>Save a copy while watching</Text></Pressable>
             <Pressable onPress={() => playUrl(url)} style={{ backgroundColor: t.accent, borderRadius: 10, padding: 11, alignItems: 'center' }}><Text style={{ color: '#fff', fontWeight: '600' }}>Play</Text></Pressable>
           </Pressable>
         </Pressable>

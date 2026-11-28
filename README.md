@@ -54,6 +54,8 @@ A fast, modern media player for Windows, macOS, Ubuntu, Android and iPhone.
 - **Controls:** speed 0.25x to 3x, audio tracks, subtitles (including external `.srt` / `.vtt`), aspect modes, A-B repeat, frame step, sleep timer, screen lock, auto-rotate, picture-in-picture and background audio.
 - **Library tools:** search, favorites, sort, hide folders, continue-watching row and resume positions.
 - **Remote control:** play, pause, seek and change volume on your computer from the phone, updated live, or send a video to the computer to play.
+- **Watch while it downloads:** on the computer, the link button plays a web link and can save a copy to Videos/OnePlay as it goes. On the phone, tick *Save a copy while watching* on the computer screen or in the network-link box, and files you open are copied to Movies/OnePlay in the background while they play.
+- **Rotation:** the phone player rotates with the phone. A button locks or unlocks auto-rotate, and another rotates the screen straight away.
 - **Play with OnePlay:** right-click any video or audio file on Windows and choose *Play with OnePlay*, or use *Open with*. The installer registers OnePlay for common video and audio types, and a file opened while OnePlay is running joins the same window.
 - **On-screen controls (Windows and macOS):** full-screen video gets a top bar (back, title, speed, subtitles, settings, more), a seek bar, transport buttons, volume and an aspect chip, drawn over mpv and hidden when the mouse is still. Linux keeps mpv's own controls.
 - **TV shows:** a Shows tab on the phone groups files named like `Show.Name.S01E02` by show and season, using a frame from the first episode as the cover.

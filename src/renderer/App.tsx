@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SharePanel } from "./Share";
 import { PhonePanel } from "./PhonePanel";
 import { CastPanel } from "./CastPanel";
+import { LinkPanel } from "./LinkPanel";
 import { AddToPlaylist, FavButton, ListsPane } from "./Lists";
 import { SubsPanel } from "./SubsPanel";
 import { AUDIO_EXT, Media, remember, shuffled } from "./lib";
-import { Cast, SlidersHorizontal, Cpu, Smartphone, Heart, ListPlus, MonitorPlay, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { Link2, Cast, SlidersHorizontal, Cpu, Smartphone, Heart, ListPlus, MonitorPlay, Search, Shuffle, Wifi, AudioLines, Camera, Captions, Clock, Languages, Layers, PictureInPicture2, Repeat1, StepForward, FolderOpen, ListMusic, Maximize2, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 
 type Tab = "queue" | "recent" | "favs" | "lists";
 const MEDIA_EXT = /\.(mp4|mkv|avi|mov|webm|m4v|mp3|flac|wav|aac|ogg|opus|m4a|wmv|ts)$/i;
@@ -49,6 +50,7 @@ export default function App() {
   const [shareOpen, setShareOpen] = useState(false);
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [castOpen, setCastOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
   const [phone, setPhone] = useState<PhoneState | null>(null);
   useEffect(() => { void window.oneplay.phoneState().then(setPhone); return window.oneplay.onPhone(setPhone); }, []);
   const [embed, setEmbed] = useState<{ embed: boolean; supported: boolean }>({ embed: true, supported: false });
@@ -136,6 +138,7 @@ export default function App() {
   const lastPos = useRef(0);
 
   useEffect(() => window.oneplay.onStatus((s: any) => {
+    if (s.event === "swdec") setSwdec(Boolean(s.value));
     if (s.event === "property-change") {
       const { name, data } = s;
       if (name === "pause") setPaused(Boolean(data));
@@ -335,6 +338,7 @@ export default function App() {
             <button className="icon-button" title="Screenshot (C)" onClick={() => window.oneplay.screenshot()}><Camera size={16} /></button>
             <button className={`icon-button ${onTop ? "active" : ""}`} title="Mini player (stay on top)" onClick={async () => setOnTop(await window.oneplay.toggleOnTop())}><PictureInPicture2 size={16} /></button>
             <button className="icon-button" title="Open media" onClick={openFiles}><FolderOpen size={17} /></button>
+            <button className="icon-button" title="Open a link" onClick={() => setLinkOpen(true)}><Link2 size={17} /></button>
             <button className="icon-button" title="Fullscreen (F)" onClick={() => window.oneplay.toggleFullscreen()}><Maximize2 size={16} /></button>
           </div>
         </header>
@@ -412,6 +416,7 @@ export default function App() {
       </section>
       {subsOpen && current && <SubsPanel media={current} onClose={() => setSubsOpen(false)} />}
       {addOpen && current && <AddToPlaylist media={current} lists={lists} onClose={() => setAddOpen(false)} />}
+      {linkOpen && <LinkPanel onClose={() => setLinkOpen(false)} onPlay={(u) => { setLinkOpen(false); void playAt([{ path: u, name: decodeURIComponent(u.split("?")[0]!.split("/").pop() || u) }], 0); }} />}
       {castOpen && current && <CastPanel path={current.path} title={current.name} onClose={() => setCastOpen(false)} />}
       {phoneOpen && phone?.connected && <PhonePanel phone={phone} onClose={() => setPhoneOpen(false)} onPlay={(list, i) => { setPhoneOpen(false); void playAt(list, i); }} />}
       {shareOpen && <SharePanel onClose={() => setShareOpen(false)} />}
