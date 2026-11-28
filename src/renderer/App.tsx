@@ -223,6 +223,13 @@ export default function App() {
     if (!isRemote(current.path)) hoverTimer.current = setTimeout(() => { void window.oneplay.grabFrame(current.path, t, 240).then((img) => setHover((h) => (h ? { ...h, img } : h))); }, 140);
   };
 
+  // Files opened from Explorer / Finder ("Open with" or "Play with OnePlay").
+  useEffect(() => {
+    const go = (paths: string[]) => { if (paths.length) void playAt(paths.map(toMedia), 0); };
+    void window.oneplay.takeOpen().then(go);
+    return window.oneplay.onOpenPaths(go);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const openFiles = async () => {
     const files = await window.oneplay.openFile();
     if (files.length) { const items = files.map(toMedia); await playAt(items, 0); }

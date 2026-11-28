@@ -1,6 +1,6 @@
 {
   "name": "oneplay",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "private": true,
   "description": "A free cross-platform desktop media player powered by mpv and FFmpeg.",
   "main": "dist-electron/main.js",
@@ -97,11 +97,12 @@
     },
     "publish": null,
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
-    "copyright": "Copyright © Kirtesh Admute",
+    "copyright": "Copyright \u00a9 Kirtesh Admute",
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "${productName}-${version}-win-x64-setup.${ext}"
+      "artifactName": "${productName}-${version}-win-x64-setup.${ext}",
+      "include": "build/installer.nsh"
     },
     "deb": {
       "depends": [
@@ -110,7 +111,41 @@
     },
     "portable": {
       "artifactName": "${productName}-${version}-win-x64-portable.${ext}"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "mp4",
+          "mkv",
+          "avi",
+          "mov",
+          "webm",
+          "m4v",
+          "wmv",
+          "flv",
+          "ts",
+          "mpg",
+          "mpeg",
+          "3gp",
+          "ogv"
+        ],
+        "name": "Video file",
+        "role": "Viewer"
+      },
+      {
+        "ext": [
+          "mp3",
+          "flac",
+          "wav",
+          "aac",
+          "ogg",
+          "opus",
+          "m4a"
+        ],
+        "name": "Audio file",
+        "role": "Viewer"
+      }
+    ]
   },
   "author": "Kirtesh Admute <kirteshadmute@gmail.com>"
 }

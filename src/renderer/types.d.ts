@@ -38,6 +38,15 @@ declare global {
       castDiscover: () => Promise<{ name: string; control: string; location: string }[]>;
       castPlay: (control: string, path: string, title: string) => Promise<{ ok: boolean; error?: string }>;
       castStop: (control: string) => Promise<boolean>;
+      takeOpen: () => Promise<string[]>;
+      onOpenPaths: (cb: (p: string[]) => void) => () => void;
+      overlayState: () => Promise<Record<string, any>>;
+      overlayInteractive: (on: boolean) => Promise<boolean>;
+      overlayBack: () => Promise<boolean>;
+      overlayNext: (d: number) => Promise<boolean>;
+      seekBy: (d: number) => Promise<boolean>;
+      setTrack: (kind: "sub" | "audio", id: number | null) => Promise<boolean>;
+      setAspect: (mode: string) => Promise<boolean>;
       getFill: () => Promise<boolean>;
       setFill: (on: boolean) => Promise<boolean>;
       getSwdec: () => Promise<boolean>;

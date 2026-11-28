@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen } from "electron";
 import { spawn, ChildProcess } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
@@ -10,6 +10,20 @@ import * as cast from "./cast";
 import { mpvCommand, mpvEnv } from "./mpvpath";
 
 let windowRef: BrowserWindow | null = null;
+
+// "Open with OnePlay" / "Play with OnePlay": files arrive as command-line arguments (or a macOS open-file event).
+const MEDIA_RE = /\.(mp4|mkv|avi|mov|webm|m4v|wmv|flv|ts|mpg|mpeg|3gp|ogv|mp3|flac|wav|aac|ogg|opus|m4a)$/i;
+const mediaFromArgs = (args: string[]) => args.filter((a) => !a.startsWith("-") && MEDIA_RE.test(a) && fs.existsSync(a));
+let queuedOpen: string[] = [];
+function openPaths(paths: string[]) {
+  if (!paths.length) return;
+  if (windowRef && !windowRef.webContents.isLoading()) { windowRef.webContents.send("open:paths", paths); if (windowRef.isMinimized()) windowRef.restore(); windowRef.focus(); }
+  else queuedOpen.push(...paths);
+}
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on("second-instance", (_e, argv) => openPaths(mediaFromArgs(argv.slice(1))));
+app.on("open-file", (e, p) => { e.preventDefault(); openPaths([p]); });
+queuedOpen = mediaFromArgs(process.argv.slice(1));
 let videoHost: BrowserWindow | null = null;
 let mpv: ChildProcess | null = null;
 let socket: net.Socket | null = null;
@@ -52,8 +66,37 @@ function armWatchdog() {
     sendStatus({ event: "swdec", value: true });
   }, 4500);
 }
+const latest: Record<string, unknown> = {};
 function sendStatus(status: Record<string, unknown>) {
+  if (status.event === "property-change" && typeof status.name === "string") latest[status.name] = status.data;
   windowRef?.webContents.send("player:property", status);
+  if (overlay && !overlay.isDestroyed()) overlay.webContents.send("player:property", status);
+}
+
+// Full-screen video is drawn by mpv in its own window, so the on-screen controls live in a transparent window laid over it.
+let overlay: BrowserWindow | null = null;
+let isVideo = false;
+const overlayWanted = () => process.platform !== "linux" && !canEmbedNativeWindow() && readPrefs().fill !== false;
+function showOverlay() {
+  if (overlay || !isVideo || !overlayWanted()) return;
+  const b = screen.getPrimaryDisplay().bounds;
+  overlay = new BrowserWindow({
+    x: b.x, y: b.y, width: b.width, height: b.height, transparent: true, frame: false, resizable: false, movable: false, skipTaskbar: true,
+    focusable: false, hasShadow: false, alwaysOnTop: true, show: false, backgroundColor: "#00000000",
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  overlay.setAlwaysOnTop(true, "screen-saver");
+  overlay.setIgnoreMouseEvents(true, { forward: true });
+  if (process.env.VITE_DEV_SERVER_URL) void overlay.loadURL(`${process.env.VITE_DEV_SERVER_URL}#overlay`);
+  else void overlay.loadFile(path.join(__dirname, "../dist/index.html"), { hash: "overlay" });
+  overlay.once("ready-to-show", () => overlay?.showInactive());
+  overlay.on("closed", () => { overlay = null; });
+  sendMpv(["script-message", "osc-visibility", "never"]);
+}
+function hideOverlay() {
+  if (overlay && !overlay.isDestroyed()) overlay.destroy();
+  overlay = null;
+  sendMpv(["script-message", "osc-visibility", "auto"]);
 }
 
 function sendMpv(command: unknown[]) {
@@ -83,6 +126,7 @@ function connectMpv(attempt = 0) {
     sendMpv(["observe_property", 11, "chapter"]);
     sendMpv(["observe_property", 12, "metadata"]);
     sendMpv(["observe_property", 13, "vo-configured"]);
+    sendMpv(["observe_property", 14, "fullscreen"]);
   });
   client.on("data", chunk => {
     buffer += chunk.toString();
@@ -94,6 +138,7 @@ function connectMpv(attempt = 0) {
         if (message.event === "property-change") {
           if (message.name === "time-pos" && typeof message.data === "number") lastPos = message.data;
           else if (message.name === "vo-configured") voConfigured = !!message.data;
+          else if (message.name === "fullscreen") { if (message.data) showOverlay(); else if (overlay) hideOverlay(); }
           else if (message.name === "track-list" && Array.isArray(message.data)) hasVideo = message.data.some((t: any) => t.type === "video" && !t.albumart);
           sendStatus(message);
         }
@@ -182,7 +227,7 @@ function startMpv() {
   mpv.on("error", () => {
     sendStatus({ event: "error", message: process.platform === "win32" ? "mpv was not found. Run \"winget install mpv\" in a terminal, then restart OnePlay." : process.platform === "darwin" ? "mpv was not found. Run \"brew install mpv\", then restart OnePlay." : "mpv was not found. Run \"sudo apt install mpv\", then restart OnePlay." });
   });
-  mpv.on("exit", () => { mpv = null; socket?.destroy(); socket = null; });
+  mpv.on("exit", () => { if (overlay) { overlay.destroy(); overlay = null; } mpv = null; socket?.destroy(); socket = null; });
   connectMpv();
 }
 
@@ -247,6 +292,8 @@ app.whenReady().then(() => {
       if (/\.(mp3|flac|wav|aac|ogg|opus|m4a)$/i.test(filePath)) videoHost.hide();
       else { videoHost.showInactive(); updateVideoHostBounds(); }
     }
+    isVideo = !/\.(mp3|flac|wav|aac|ogg|opus|m4a)$/i.test(filePath);
+    if (!isVideo) hideOverlay(); else if (latest.fullscreen) showOverlay();
     armWatchdog();
     sendMpv(["loadfile", filePath, "replace"]);
     return true;
@@ -345,7 +392,20 @@ app.whenReady().then(() => {
   ipcMain.handle("share:forget", () => { share.forgetDevices(); return share.shareState(); });
   ipcMain.handle("share:put-resume", (_e, key: string, pos: number, dur: number) => { share.putResume(String(key).toLowerCase(), Number(pos) || 0, Number(dur) || 0); return true; });
   ipcMain.handle("share:get-resume", (_e, key: string) => share.getResume(String(key).toLowerCase()) ?? null);
-  ipcMain.handle("player:stop", () => { sendMpv(["stop"]); return true; });
+  ipcMain.handle("open:take", () => { const q = queuedOpen; queuedOpen = []; return q; });
+  ipcMain.handle("player:stop", () => { hideOverlay(); sendMpv(["stop"]); return true; });
+  ipcMain.handle("overlay:state", () => ({ ...latest }));
+  ipcMain.handle("overlay:interactive", (_e, on: boolean) => { overlay?.setIgnoreMouseEvents(!on, { forward: true }); return true; });
+  ipcMain.handle("overlay:back", () => { sendMpv(["set_property", "fullscreen", false]); hideOverlay(); windowRef?.show(); windowRef?.focus(); return true; });
+  ipcMain.handle("overlay:next", (_e, d: number) => { windowRef?.webContents.send("remote:cmd", { cmd: d > 0 ? "next" : "prev" }); return true; });
+  ipcMain.handle("player:seek-by", (_e, d: number) => { sendMpv(["seek", Number(d) || 0, "relative"]); return true; });
+  ipcMain.handle("player:set-track", (_e, kind: "sub" | "audio", id: number | null) => { sendMpv(["set_property", kind === "sub" ? "sid" : "aid", id ?? "no"]); return true; });
+  ipcMain.handle("player:set-aspect", (_e, mode: string) => {
+    sendMpv(["set_property", "video-aspect-override", mode === "16:9" || mode === "4:3" || mode === "21:9" ? mode : "-1"]);
+    sendMpv(["set_property", "panscan", mode === "fill" ? 1 : 0]);
+    sendMpv(["set_property", "keepaspect", mode !== "stretch"]);
+    return true;
+  });
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
